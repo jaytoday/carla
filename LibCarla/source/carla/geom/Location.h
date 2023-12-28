@@ -7,10 +7,13 @@
 #pragma once
 
 #include "carla/geom/Vector3D.h"
+#include "carla/geom/Vector3DInt.h"
 #include "carla/geom/Math.h"
 
 #ifdef LIBCARLA_INCLUDED_FROM_UE4
-#  include "Math/Vector.h"
+#include <compiler/enable-ue4-macros.h>
+#include "Math/Vector.h"
+#include <compiler/disable-ue4-macros.h>
 #endif // LIBCARLA_INCLUDED_FROM_UE4
 
 namespace carla {
@@ -29,9 +32,18 @@ namespace geom {
 
     Location(const Vector3D &rhs) : Vector3D(rhs) {}
 
+    Location(const Vector3DInt &rhs) :
+        Vector3D(static_cast<float>(rhs.x),
+                 static_cast<float>(rhs.y),
+                 static_cast<float>(rhs.z)) {}
+
     // =========================================================================
     // -- Other methods --------------------------------------------------------
     // =========================================================================
+
+    auto DistanceSquared(const Location &loc) const {
+      return Math::DistanceSquared(*this, loc);
+    }
 
     auto Distance(const Location &loc) const {
       return Math::Distance(*this, loc);

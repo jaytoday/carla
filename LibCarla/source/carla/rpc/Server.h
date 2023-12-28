@@ -12,6 +12,7 @@
 #include "carla/rpc/Response.h"
 
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
 
 #include <rpc/server.h>
 
@@ -50,6 +51,11 @@ namespace rpc {
     }
 
     void SyncRunFor(time_duration duration) {
+      #ifdef LIBCARLA_INCLUDED_FROM_UE4
+      #include <compiler/enable-ue4-macros.h>
+      TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__);
+      #include <compiler/disable-ue4-macros.h>
+      #endif // LIBCARLA_INCLUDED_FROM_UE4
       _sync_io_context.reset();
       _sync_io_context.run_for(duration.to_chrono());
     }
@@ -107,12 +113,12 @@ namespace detail {
         });
         if (metadata.IsResponseIgnored()) {
           // Post task and ignore result.
-          io.post(MoveHandler(task));
+          boost::asio::post(io, MoveHandler(task));
           return R();
         } else {
           // Post task and wait for result.
           auto result = task.get_future();
-          io.post(MoveHandler(task));
+          boost::asio::post(io, MoveHandler(task));
           return result.get();
         }
       };

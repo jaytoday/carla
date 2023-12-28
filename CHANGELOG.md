@@ -1,8 +1,381 @@
-## Latest
+## CARLA 0.9.15
+
+  * Added Digital Twins feature version 0.1. Now you can create your own map based on OpenStreetMaps
+  * Added compatibility with SymReady Assets, using NVIDIA Omniverse
+  * Added new maps: Town13 (is a large map) and Town15
+  * The spectator will be used to load tiles and actor in Large Maps when no other actors with the rolename 'ego_vehicle' or 'hero' are present. Added the `spectator_as_ego` to the `carla.WorldSettings()` to allow users to disable this behavior.
+  * Add keyword arguments for `carla.TrafficManager` Python API functions
+  * Added build support for VS2022 and Ninja for LibCarla and osm2odr on Windows
+  * Added empty actor
+  * Restored gamma value to 2.2 instead of 2.4
+  * CarlaExporter tool now exports the box collider and convex collider of the object if it has one, otherwise the mesh
+  * Pedestrians with AI or in replayer are now faster around 10x. They have collisions disabled until they hit a vehicle.
+  * Added API function to avoid replaying the spectator
+    * `Client.set_replayer_ignore_spectator(bool)`
+    * `start_replaying.py` using flag `--move-spectator`
+  * Surface non-unity build mode by passing ARGS=--no-unity to make; allows IWYU-type errors to be unmasked and fixed.
+  * Added maps, vehicles, pedestrians and props catalogues to the documentation
+  * Collisions detected by the CollisionSensor no longer generate more than one event per frame.
+  * Added API function to load a map only if it is different from the current one.
+  * Fixed a bug in the TrafficManager causing vehicles that reached an ending lane to have abnormal behavior while lane changing.
+  * Fixed bug causing the TM's unstuck logic to incorrectly remove the vehicles in some situations.
+  * Fixed the extra data in Directx textures, so we need to copy row by row on Windows to remove extra bytes on images
+  * Fixed vertices of big meshes (more than 65k vertices) in CarlaExporter
+  * Fixed sensors to check for the stream to be ready (race condition)
+  * Fixed bug causing the `FPixelReader::SavePixelsToDisk(PixelData, FilePath)` function to crash due to pixel array not set correctly.
+  * Fixed segfaults in Python API due to incorrect GIL locking under Python 3.10.
+  * Fixed the import script, where could use any other TilesInfo.txt if the destination folder has many
+
+## CARLA 0.9.14
+
+  * Fixed tutorial for adding a sensor to CARLA.
+  * Fixed bug in FrictionTrigger causing sometimes server segfault
+  * Added attachment type "SpringArmGhost" for cinematic cameras but without doing the collision test.
+  * Improved algorithm to move signals out of the road by computing the desired displacement direction.
+  * Added `TrafficManager.vehicle_lane_offset(actor, offset)` and `TrafficManager.global_lane_offset(offset)` methods.
+  * Some of the warnings shown when building a map will now only be showing when debugging.
+  * The ids for semantic segmentation has been modified to be the same as cityscapes (labels, ids and colors)
+  * Fixed bug causing traffic signals at the end points of a road to sometimes create malformed waypoints.
+  * Fixed pedestrian skeleton frame, where sometimes it was draw displaced from the body
+  * Fixed decals when importing maps. It was using other .json files found in other packages.
+  * In multi-GPU mode some sensors now are forced to be created on the primary server always (ex. collision sensor)
+  * Added the speed limits for 100, 110 and 120 Km/h.
+  * Fixing sensor destruction, now the stream and socket is succesfully destroyed.
+  * Fixed bug at `Vehicle.get_traffic_light_state()` and `Vehicle.is_at_traffic_light()` causing vehicles to temporarily not lose the information of a traffic light if they moved away from it before it turned green.
+  * Changed the height of the automatic spawn points, from 3m to only 0.5m
+  * Added pedestrian skeleton to the recorder, as additional data. They will replay with the exact pose.
+  * Added multi-GPU feature. Now several servers (with dedicated GPU) can render sensors for the same simulation.
+  * Fixed bug causing the `Vehicle.get_traffic_light_state()` function not notify about the green to yellow and yellow to red light state changes.
+  * Fixed bug causing the `Vehicle.is_at_traffic_light()` function to return *false* if the traffic light was green.
+  * Fixed bug causing the scene lights to return an incorrect location at large maps.
+  * Fixed bug causing the `world.ground_projection()` function to return an incorrect location at large maps.
+  * Added failure state to vehicles, which can be retrieved by using `Vehicle.get_failure_state()`. Only Rollover failure state is currently supported.
+  * Fixed bug causing the TM to block the simulation when a vehicle with no physics was teleported.
+  * Fixed bug causing the TM to block the simulation when travelling through a short roads that looped on themselves.
+  * Improved the TM's handling of non signalized junctions, resulting in a more fluid overall behavior.
+  * Added check to avoid adding procedural trigger boxes inside intersections.
+  * Python agents now accept a carla.Map and GlobalRoutePlanner instances as inputs, avoiding the need to recompute them.
+  * Python agents now have a function to lane change.
+  * Python agents now detect vehicle in adjacent lanes if invaded due to the offset.
+  * Python agents now have the offset exposed.
+  * Fixed bug causing the python agents to sometimes not detect a blocking actor if there were severral actors around it.
+  * Improved Python agents performance for large maps.
+  * Fix a bug at `Map.get_topology()`, causing lanes with no successors to not be part of it.
+  * Added new ConstantVelocityAgent
+  * Added new parameter to the TrafficManager, `set_desired_speed`, to set a vehicle's speed.
+  * Added 4 new attributes to all vehicles:
+    - `base_type` can be use as a vehicle classification. The possible values are  *car*, *truck*, *van*, *motorcycle* and *bycicle*.
+    - `special_type` provides more information about the vehicle. It is currently restricted to *electric*, *emergency* and *taxi*, and not all vehicles have this attribute filled.
+    - `has_dynamics_doors` can either be *true* or *false* depending on whether or not the vehicle has doors that can be opened using the API.
+    - `has_lights` works in the same way as *has_dynamic_doors*, but differentiates between vehicles with lights, and those that don't.
+  * Added native ackermann controller:
+    - `apply_ackermann_control`:  to apply an ackermann control command to a vehicle
+    - `get_ackermann_controller_settings`: to get the last ackermann controller settings applied
+    - `apply_ackermann_controller_settings`: to apply new ackermann controller settings
+  * Fixed bug causing the Traffic Manager to not be deterministic when using hybrid mode
+  * Added `NormalsSensor`, a new sensor with normals information
+  * Added support for N wheeled vehicles
+  * Added support for new batch commands ConsoleCommand, ApplyLocation (to actor), SetTrafficLightState
+  * Added new API function: `set_day_night_cycle` at the LightManager, to (de)activate the automatic switch of the lights when the simulation changes from day to night mode, and viceversa.
+  * Switch to boost::variant2 for rpc::Command as that allows more than 20 RPC commands
+  * Added post process effects for rainy and dusty weathers.
+  * Switched data type of the dust storm weather parameter from bool to float.
+  * Check for the version of the installed Clang compiler during build.
+  * Added API function to get direct access to the GBuffer textures of a sensor:
+    - `listen_to_gbuffer`: to set a callback for a specific GBuffer texture
+
+## CARLA 0.9.13
+
+  * Added new **instance aware semantic segmentation** sensor `sensor.camera.instance_segmentation`
+  * Added new API classes: `MaterialParameter`, `TextureColor` and  `TextureFloatColor` to encode texture data and field (normal map, diffuse, etc)
+  * Added new API functions: `apply_color_texture_to_object`, `apply_float_color_texture_to_object` and `apply_textures_to_object` to paint objects in **runtime**
+  * Added the option for users to set a **route** using RoadOption elements to a vehicle controlled by the Traffic Manager.
+  * **Cache** now has an extra folder with current version of CARLA (so different cache per version)
+  * Added **set_percentage_random_left_lanechange** and **set_percentage_random_right_lanechange**.
+  * Improved handling of **collisions** in Traffic Manager when driving at **very high speeds**.
+  * Added physical simulation to **vehicle doors**, capable of opening and closing
+  * Added **open/close doors** feature for vehicles.
+  * Added API functions to **3D vectors**: `squared_length`, `length`, `make_unit_vector`, `dot`, `dot_2d`, `distance`, `distance_2d`, `distance_squared`, `distance_squared_2d`, `get_vector_angle`
+  * Added API functions to **2D vectors**: `squared_length`, `length`, `make_unit_vector`
+  * Added a **seed** for better reproducibility of pedestrians
+    - New API function `set_pedestrians_seed`
+    - New parameter **--seedw** in generate_traffic.py script
+  * Added missing dependency `libomp5` to **Release.Dockerfile**
+  * Added API functions to interact with **pedestrian bones**:
+    - `get_bones / set_bones`:  to get/set the bones of a pedestrian
+    - `blend_pose`:  to blend a custom pose with current animation
+    - `show_pose / hide_pose`:  to show or hide the custom pose
+    - `get_pose_from_animation`:  to set the custom pose with the animation current frame
+  * Added a new script in **PythonAPI/examples/draw_skeleton.py** to draw the bones of a pedestrian from client side
+  * Improved **collision** detection of the Python agents
+  * Added the new **VehicleLightStage** to the Traffic Manager to dynamically update the vehicle lights.
+  * Added two new examples to **PythonAPI/util**: Conversion of OpenStreetMaps to OpenDRIVE maps `osm_to_xodr.py` and Extraction of map spawn points `extract_spawn_points.py`
+  * Fixed the **import of props** without any map
+  * Fixed **global route planner** crash when being used at maps without lane markings
+  * Fixed bug causing the server to **sigsegv** when a vehicle collides an environment object in recording mode.
+  * Fixed **RSSSensor**: made client side calculations threaded
+  * Fixed **keep_right_rule** parameter.
+
+## CARLA 0.9.12
+
+  * Changed the resolution of the cached map in Traffic Manager from 0.1 to 5 meters
+  * Fixed import sumo_integration module from other scripts
+  * CARLA now is built with Visual Studio 2019 in Windows
+  * Fixed bug causing the RoadOptions at the BehaviorAgent to not work as intended
+  * Upgrading to Unreal Engine 4.26
+  * Added generation attribute to vehicles and pedestrians
+  * Added Lincoln 2020 vehicle dimensions for CarSim integration
+  * Enabling the **no_delay** option to RPC and stream sockets
+  * The special nomenclature to define roads (ROAD_ROAD), sidewalks (ROAD_SIDEWALK)... can be at any position of the asset name
+  * Improved performance bencharmark script: sync, map and sensor selection, ...
+  * Improved performance, destroyed PhysX state for vehicles when physics are disable
+  * Improved parallelism of raycast sensors in system with large number of cores
+  * Added 'visualize_multiple_sensors' example
+  * Added 'check_lidar_bb' util script
+  * Added optional flag to `client.replay_file()` `replay_sensors` to enable or disable the replaying the sensors
+  * Improved manual_control: now cameras are set in relation with car size
+  * Client required files are sent from the server to a local cache (OpenDRIVE, Traffic Manager...)
+  * Added CHRONO library for vehicle dynamics simulation (https://projectchrono.org/)
+    - Supported JSON vehicle definition
+    - Unsupported collision dynamics
+  * Added performance benchmarking section to documentation
+  * Added API functions to traffic light actor `get_effect_waypoints()`, `get_light_boxes()` and `get_opendrive_id()`
+  * Added API functions to world `get_traffic_lights_from_waypoint()`, `get_traffic_lights_in_junction` and `get_traffic_light_from_opendrive_id`
+  * Added API parameters to `WorldSettings`: `tile_stream_distance` and `actor_active_distance`
+  * Added API parameters and functions to `Osm2OdrSettings`: `proj_string`, `center_map`, `generate_traffic_lights`, `all_junctions_with_traffic_lights`, `set_osm_way_types`, and `set_traffic_light_excluded_way_types`
+  * Added API function to enable car telemetry
+  * CARLA is compatible with the last RoadRunner nomenclature for road assets
+  * Fixed a bug when importing a FBX map with some **_** in the FBX name
+  * Extended make import process for applying road painter materials (carla art tool)
+  * Added Large Map feature to CARLA, alowing to import large maps divided in square tiles (at most 2kmx2km per tile). Only section of a Large Map can be loaded at a time which introduces a sleep state for actors that are far away from the hero vehicle
+  * Added creation of custom JSON file for applying decals to imported roads
+  * Added ApplyVehiclePhysicsControl to commands
+  * Added flush in the sublevel loading to increase carla's determinism in Opt maps
+  * Fix bug in carla.Transform.get_up_vector()
+  * Fix bug in lidar channel point count
+  * Fix imu: some weird cases were given nan values
+  * Fix bugs in apply_physics_control and friction trigger
+  * Exposed tire parameters for longitudinal and lateral stiffness in the PhysicsControl.
+  * When setting a global plan at the LocalPlanner, it is now optional to stop the automatic fill of the waypoint buffer
+  * Improved agent's vehicle detection to also take into account the actor bounding boxes
+  * Added Optical Flow camera
+  * API extensions:
+  - Added `set_wheel_steer_direction()` function to change the bone angle of each wheel of a vehicle
+  - Added `get_wheel_steer_angle()` function to get the steer angle of a vehicle wheel
+  - Added `scattering_intensity` , `mie_scattering_scale` , `rayleigh_scattering_scale` to PythonAPI for changing weather attributes
+  - Improved the python agents API. Old behaviors have been improved and new ones have also been added, improving the functionalities of the agents. Several bugs have also been fixed
+
+## CARLA 0.9.11
+
+  * Improved the documentation for use with pandoc tool by converting html tags to their markdown equivalent
+  * Refactored FAQ section of docs to use minimal html and fix broken layout
+  * Extended the local planner with a lateral `offset`
+  * Upgraded to DirectX 12 on Windows
+  * Added the new core pipeline for the simulator
+  * Added parameter to carla settings to control culling
+  * Added fully deterministic option for Traffic Manager, sorting vehicles by ID and avoiding race conditions
+  * Added the option to sweep the wheel shape for collision. This requires to patch the engine
+  * Added the possibility of changing physics substepping options from client
+  * Added 'noise_seed' to sensors to initialize the random generators
+  * API extensions:
+    - Added `actor.set_enable_gravity()` function to enable/disable the gravity affecting the actor
+    - Added `load_map_layer` and `unload_map_layer` to control map layers on new maps that support subleveling
+    - Added `get_environment_objects`call to get all the placed objects in the level
+    - Added `enable_environment_objects`call to enable/disable objects of the level
+    - Added `horizontal_fov` parameter to lidar sensor to allow for restriction of its field of view
+    - Added `WorldSettings.deterministic_ragdolls` to enable deterministic or physically based ragdolls
+  * Fixed RSSSensor python3 build and import of open drive maps by updating to ad-rss v4.2.0 and ad-map-access v2.3.0. Python import of dependent 'ad' python modules reflects now the namespaces of the C++ interface and follow doxygen documentation
+  * Fixed sensor transformations and sensor data transformations mismatch in IMU and camera-based sensors
+  * Fixed random dead-lock on synchronous mode at high frame rate
+  * Fixed bug on Windows causing sun reflection artifacts
+  * Fixed bug in `waypoint.get_landmarks()` causing some landmarks to be missed when s = 0
+  * Fixed the `actor.set_simulate_physics()` for pedestrians and vehicles
+  * Fixed bug causing camera-based sensors to stop sending data
+  * Fixed the lack of determinism on the output of raycast sensors
+  * Fixed missing `laneChange` record in converted OSM maps
+  * Fixed bug in the actor's id returned by the semantic lidar
+  * Fixed error when using `--config` parameter in `make package`
+  * Fixed dependency of library **Xerces-c** on package
+  * Fixed minor typo in the simulation data section of the documentation
+  * Fixed the `config.py` to read the `.osm ` files in proper `utf-8` encoding
+
+## CARLA 0.9.10
+
+  * Added retrieval of bounding boxes for all the elements of the level
+  * Added deterministic mode for Traffic Manager
+  * Added support in Traffic Manager for dead-end roads
+  * Upgraded CARLA Docker image to Ubuntu 18.04
+  * Upgraded to AD RSS v4.1.0 supporting unstructured scenes and pedestrians, and fixed spdlog to v1.7.0
+  * Changed frozen behavior for traffic lights. It now affects to all traffic lights at the same time
+  * Added new pedestrian models
+  * API changes:
+    - Renamed `actor.set_velocity()` to `actor.set_target_velocity()`
+    - Renamed `actor.set_angular_velocity()` to `actor.set_target_velocity()`
+    - RGB cameras `exposure_mode` is now set to `histogram` by default
+  * API extensions:
+    - Added `carla.Osm2Odr.convert()` function and `carla.Osm2OdrSettings` class to support Open Street Maps to OpenDRIVE conversion
+    - Added `world.freeze_all_traffic_lights()` and `traffic_light.reset_group()`
+    - Added `client.stop_replayer()` to stop the replayer
+    - Added `world.get_vehicles_light_states()` to get all the car light states at once
+    - Added constant velocity mode (`actor.enable_constant_velocity()` / `actor.disable_constant_velocity()`)
+    - Added function `actor.add_angular_impulse()` to add angular impulse to any actor
+    - Added `actor.add_force()` and `actor.add_torque()`
+    - Added functions `transform.get_right_vector()` and `transform.get_up_vector()`
+    - Added command to set multiple car light states at once
+    - Added 4-matrix form of transformations
+  * Added new semantic segmentation tags: `RailTrack`, `GuardRail`, `TrafficLight`, `Static`, `Dynamic`, `Water` and `Terrain`
+  * Added fixed ids for street and building lights
+  * Added vehicle light and street light data to the recorder
+  * Improved the colliders and physics for all vehicles
+  * All sensors are now multi-stream, the same sensor can be listened from different clients
+  * New semantic LiDAR sensor (`lidar.ray_cast_semantic`)
+  * Added `open3D_lidar.py`, a more friendly LiDAR visualizer
+  * Added make command to download contributions as plugins (`make plugins`)
+  * Added a warning when using SpringArm exactly in the 'z' axis of the attached actor
+  * Improved performance of raycast-based sensors through parallelization
+  * Added an approximation of the intensity of each point of the cloud in the LiDAR sensor
+  * Added Dynamic Vision Sensor (DVS) camera based on ESIM simulation http://rpg.ifi.uzh.ch/esim.html
+  * Improved LiDAR and radar to better match the shape of the vehicles
+  * Added support for additional TraCI clients in Sumo co-simulation
+  * Added script example to synchronize the gathering of sensor data in client
+  * Added default values and a warning message for lanes missing the width parameter in OpenDRIVE
+  * Added parameter to enable/disable pedestrian navigation in standalone mode
+  * Improved mesh partition in standalone mode
+  * Added Renderdoc plugin to the Unreal project
+  * Added configurable noise to LiDAR sensor
+  * Replace deprecated `platform.dist()` with recommended `distro.linux_distribution()`
+  * Improved the performance of capture sensors
+  * Fixed the center of mass for vehicles
+  * Fixed a number of OpenDRIVE parsing bugs
+  * Fixed vehicles' bounding boxes, now they are automatic
+  * Fixed a map change error when Traffic Manager is in synchronous mode
+  * Fixes add entry issue for applying parameters more than once in Traffic Manager
+  * Fixes std::numeric_limits<float>::epsilon error in Traffic Manager
+  * Fixed memory leak on `manual_control.py` scripts (sensor listening was not stopped before destroying)
+  * Fixed a bug in `spawn_npc_sumo.py` script computing not allowed routes for a given vehicle class
+  * Fixed a bug where `get_traffic_light()` would always return `None`
+  * Fixed recorder determinism problems
+  * Fixed several untagged and mistagged objects
+  * Fixed rain drop spawn issues when spawning camera sensors
+  * Fixed semantic tags in the asset import pipeline
+  * Fixed `Update.sh` from failing when the root folder contains a space on it
+  * Fixed dynamic meshes not moving to the initial position when replaying
+  * Fixed colors of lane markings when importing a map, they were reversed (white and yellow)
+  * Fixed missing include directive in file `WheelPhysicsControl.h`
+  * Fixed gravity measurement bug from IMU sensor
+  * Fixed LiDAR’s point cloud reference frame
+  * Fixed light intensity and camera parameters to match
+  * Fixed and improved auto-exposure camera (`histogram` exposure mode)
+  * Fixed delay in the TCP communication from server to the client in synchronous mode for Linux
+  * Fixed large RAM usage when loading polynomial geometry from OpenDRIVE
+  * Fixed collision issues when `debug.draw_line()` is called
+  * Fixed gyroscope sensor to properly give angular velocity readings in the local frame
+  * Fixed minor typo in the introduction section of the documentation
+  * Fixed a bug at the local planner when changing the route, causing it to maintain the first part of the previous one. This was only relevant when using very large buffer sizes
+
+## CARLA 0.9.9
+
+  * Introduced hybrid mode for Traffic Manager
+  * Upgraded to Unreal Engine 4.24
+  * Fixed autonomous agents' incorrect detection of red traffic lights affecting them
+  * Improved manual_control by adding realistic throttle and brake
+  * Added walkable pedestrian crosswalks in OpenDRIVE standalone mode
+  * Improved mesh generation with a chunk system for better performance and bigger maps in the future
+  * Added security features to the standalone OpenDRIVE mode aiming to prevent cars from falling down from the road
+  * Added junction smoothing algorithm to prevent roads from blocking other roads with level differences
+  * Added new Behavior agent
+  * Added automatic generation of traffic lights, stop signal and yield signal from OpenDRIVE file
+  * Upgraded to AD RSS v3.0.0 supporting complex road layouts and i.e. intersections
+  * Added examples of sumo co-simulation for Town01, Town04 and Town05
+  * Added ptv vissim and carla co-simulation
+  * Fixed `GetLeftLaneMarking()` from a possible runtime error
+  * API extensions:
+    - Added new methods to `Map`: `get_all_landmarks`, `get_all_landmarks_from_id` and `get_all_landmarks_of_type`
+  * Added synchronization of traffic lights in sumo co-simulation
+  * Added light manager to control the lights of the map
+
+## CARLA 0.9.8
+
+  * Added beta version sumo-carla co-simulation
+  * Traffic Manager:
+    - Added benchmark
+    - Added synchronous mode
+    - Fixed change map error
+    - Added multiclient architecture
+    - Added multi Traffic Manager architecture
+    - Fixed linkage between waypoints
+    - Implemented intersection anticipation
+    - Implemented vehicle destruction when stuck
+    - Implemented tunable parameters
+    - Revamped lane changes
+  * Added landmark class for signal-related queries
+  * Added support to parse OpenDRIVE signals
+  * Added junction class as queryable object from waypoint
+  * Added timeout to World Tick
+  * Added simple physical map generation from standalone OpenDRIVE data
+  * Added support for generating walker navigation on server-side
+  * Added support for new geometry: `spiral`, `poly3`, and `paramPoly3`
+  * Improved `get_waypoint(location)` performance
+  * New weather system: night time, fog, rain ripples, and now wind affects vegetation and rain (not car physics)
+  * Fixed Low/Epic quality settings transition
+  * Enabled Mesh distance fields
+  * API extensions:
+    - Added new methods to `BoundingBox`: `contains()`, `get_local_vertices()` and `get_world_vertices(transform)`
+    - Added new function to get a waypoint specifying parameters from the OpenDRIVE: `map.get_waypoint_xodr(road_id, lane_id, s)`
+    - Added 3 new parameters for the `carla.Weather`: `fog_density`, `fog_distance`, and (ground) `wetness`
+    - Added `carla.client.generate_opendrive_world(opendrive)` that loads a map with custom OpenDRIVE basic physical topology
+  * New python clients:
+    - `weather.py`: allows weather changes using the new weather parameters
+  * Fixed docker build of `.BIN` for pedestrian navigation
+  * Fixed `local_planner.py`: agent will now stop when it reaches the desired destination
+  * Fixed crash when missing elevation profile and lane offset in OpenDRIVE
+  * Fixed typos
+  * Fixed agent failures due to API changes in `is_within_distance_ahead()`
+  * Fixed assertion bug when using LibCarla
+  * Fixed incorrect doppler velocity for RADAR sensor
+  * Fixed documentation links
+  * Upgraded Boost to 1.72.0
+  * Recorder feature:
+    - Added an option `-i` to `start_replaying.py` to replay a session ignoreing the hero vehicles
+  * Fixed import pipeline bugs:
+    - Crash when no pedestrian navmesh is present
+    - Automatically imported static meshes not properly tagged
+  * Fixed PID controller's sensitivity to time discretization
+
+## CARLA 0.9.7
+
+  * Upgraded parameters of Unreal/CarlaUE4/Config/DefaultInput.ini to prevent mouse freeze
+  * Add build variant with AD RSS library integration with RSS sensor and result visualisation
+  * Support for OpenGL and Vulkan in docker + headless mode
+  * Added new sensor: Inertial measurement unit (IMU)
+  * Added new sensor: Radar
+  * Exposed rgb camera attributes: exposure, depth of field, tonemapper, color correction, and chromatic aberration
+  * Now all the camera-based sensors are provided with an additional parametrized lens distortion shader
+  * Added Traffic Manager to replace autopilot in managing the NPC vehicles
+  * Improved pedestrians navigation
+  * API changes:
+    - Lidar: `range` is now set in meters, not in centimeters
+    - Lidar: `horizontal_angle` is now received in radians, not in degrees
+    - GNSS: `carla.GnssEvent` renamed to `carla.GnssMeasurement`
+  * API extensions:
+    - Added `carla.IMUMeasurement`
+    - Added `carla.RadarMeasurement` and `carla.RadarDetection`
+    - GNSS data can now be obtained with noise
+    - IMU data can now be obtained with noise
+  * Moved GNSS sensor from client to server side
+  * Added exporter plugin for UE4 to allow export meshes ready for Recast calculation
+  * The 'make import' process now rename the assets accordingly and set complex collision as simple
+  * New Python API function added (map.get_crosswalks()) that returns a list with all points that define the crosswalk zones from OpenDRIVE file
+  * Updated `manual_control.py` with a lens disortion effect example
+  * Updated `manual_control.py` with IMU and Radar realtime visualization
+  * Fixed pylint for python3 in travis
+  * Fixed PointCloudIO `cout` that interfiered with other python modules
   * Better steering in manual control
   * Added Doxygen documentation online with automatic updates through Jenkins pipeline
+  * Fixed an error in `automatic_control.py` failing because the `Num Lock` key
   * Fixed client_bounding_boxes.py example script
-  * Exposed in the API: camera, exposure, depth of field, tone mapper and color attributes for the RGB sensor
+  * Fixed materials and semantic segmentation issues regarding importing assets
+  * Fixed ObstacleSensor to return HitDistance instead of HitRadius
 
 ## CARLA 0.9.6
 

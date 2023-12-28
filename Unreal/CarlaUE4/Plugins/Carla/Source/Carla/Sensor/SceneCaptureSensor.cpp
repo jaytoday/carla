@@ -6,15 +6,12 @@
 
 #include "Carla.h"
 #include "Carla/Sensor/SceneCaptureSensor.h"
-
 #include "Carla/Game/CarlaStatics.h"
+#include "Actor/ActorBlueprintFunctionLibrary.h"
 
-#include "Components/DrawFrustumComponent.h"
-#include "Components/SceneCaptureComponent2D.h"
-#include "Components/StaticMeshComponent.h"
-#include "Engine/TextureRenderTarget2D.h"
-#include "HighResScreenshot.h"
-#include "ContentStreaming.h"
+#include <mutex>
+#include <atomic>
+#include <thread>
 
 static auto SCENE_CAPTURE_COUNTER = 0u;
 
@@ -53,12 +50,19 @@ ASceneCaptureSensor::ASceneCaptureSensor(const FObjectInitializer &ObjectInitial
   CaptureRenderTarget->CompressionSettings = TextureCompressionSettings::TC_Default;
   CaptureRenderTarget->SRGB = false;
   CaptureRenderTarget->bAutoGenerateMips = false;
+  CaptureRenderTarget->bGPUSharedFlag = true;
   CaptureRenderTarget->AddressX = TextureAddress::TA_Clamp;
   CaptureRenderTarget->AddressY = TextureAddress::TA_Clamp;
 
-  CaptureComponent2D = CreateDefaultSubobject<USceneCaptureComponent2D>(
-      FName(*FString::Printf(TEXT("SceneCaptureComponent2D_%d"), SCENE_CAPTURE_COUNTER)));
+  CaptureComponent2D = CreateDefaultSubobject<USceneCaptureComponent2D_CARLA>(
+      FName(*FString::Printf(TEXT("USceneCaptureComponent2D_CARLA_%d"), SCENE_CAPTURE_COUNTER)));
+  check(CaptureComponent2D != nullptr);
+  CaptureComponent2D->ViewActor = this;
   CaptureComponent2D->SetupAttachment(RootComponent);
+  CaptureComponent2D->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
+  CaptureComponent2D->bCaptureOnMovement = false;
+  CaptureComponent2D->bCaptureEveryFrame = false;
+  CaptureComponent2D->bAlwaysPersistRenderingState = true;
 
   SceneCaptureSensor_local_ns::SetCameraDefaultOverrides(*CaptureComponent2D);
 
@@ -104,7 +108,13 @@ EAutoExposureMethod ASceneCaptureSensor::GetExposureMethod() const
 void ASceneCaptureSensor::SetExposureCompensation(float Compensation)
 {
   check(CaptureComponent2D != nullptr);
+#if PLATFORM_LINUX
+  // Looks like Windows and Linux have different outputs with the
+  // same exposure compensation, this fixes it.
+  CaptureComponent2D->PostProcessSettings.AutoExposureBias = Compensation + 0.75f;
+#else
   CaptureComponent2D->PostProcessSettings.AutoExposureBias = Compensation;
+#endif
 }
 
 float ASceneCaptureSensor::GetExposureCompensation() const
@@ -320,13 +330,13 @@ float ASceneCaptureSensor::GetExposureSpeedUp() const
 void ASceneCaptureSensor::SetExposureCalibrationConstant(float Constant)
 {
   check(CaptureComponent2D != nullptr);
-  CaptureComponent2D->PostProcessSettings.AutoExposureCalibrationConstant = Constant;
+  CaptureComponent2D->PostProcessSettings.AutoExposureCalibrationConstant_DEPRECATED = Constant;
 }
 
 float ASceneCaptureSensor::GetExposureCalibrationConstant() const
 {
   check(CaptureComponent2D != nullptr);
-  return CaptureComponent2D->PostProcessSettings.AutoExposureCalibrationConstant;
+  return CaptureComponent2D->PostProcessSettings.AutoExposureCalibrationConstant_DEPRECATED;
 }
 
 void ASceneCaptureSensor::SetMotionBlurIntensity(float Intensity)
@@ -365,6 +375,30 @@ float ASceneCaptureSensor::GetMotionBlurMinObjectScreenSize() const
   return CaptureComponent2D->PostProcessSettings.MotionBlurPerObjectSize;
 }
 
+void ASceneCaptureSensor::SetLensFlareIntensity(float Intensity)
+{
+  check(CaptureComponent2D != nullptr);
+  CaptureComponent2D->PostProcessSettings.LensFlareIntensity = Intensity;
+}
+
+float ASceneCaptureSensor::GetLensFlareIntensity() const
+{
+  check(CaptureComponent2D != nullptr);
+  return CaptureComponent2D->PostProcessSettings.LensFlareIntensity;
+}
+
+void ASceneCaptureSensor::SetBloomIntensity(float Intensity)
+{
+  check(CaptureComponent2D != nullptr);
+  CaptureComponent2D->PostProcessSettings.BloomIntensity = Intensity;
+}
+
+float ASceneCaptureSensor::GetBloomIntensity() const
+{
+  check(CaptureComponent2D != nullptr);
+  return CaptureComponent2D->PostProcessSettings.BloomIntensity;
+}
+
 void ASceneCaptureSensor::SetWhiteTemp(float Temp)
 {
   check(CaptureComponent2D != nullptr);
@@ -389,17 +423,136 @@ float ASceneCaptureSensor::GetWhiteTint() const
   return CaptureComponent2D->PostProcessSettings.WhiteTint;
 }
 
+void ASceneCaptureSensor::SetChromAberrIntensity(float Intensity)
+{
+  check(CaptureComponent2D != nullptr);
+  CaptureComponent2D->PostProcessSettings.SceneFringeIntensity = Intensity;
+}
+
+float ASceneCaptureSensor::GetChromAberrIntensity() const
+{
+  check(CaptureComponent2D != nullptr);
+  return CaptureComponent2D->PostProcessSettings.SceneFringeIntensity;
+}
+
+void ASceneCaptureSensor::SetChromAberrOffset(float ChromAberrOffset)
+{
+  check(CaptureComponent2D != nullptr);
+  CaptureComponent2D->PostProcessSettings.ChromaticAberrationStartOffset = ChromAberrOffset;
+}
+
+float ASceneCaptureSensor::GetChromAberrOffset() const
+{
+  check(CaptureComponent2D != nullptr);
+  return CaptureComponent2D->PostProcessSettings.ChromaticAberrationStartOffset;
+}
+
+void ASceneCaptureSensor::EnqueueRenderSceneImmediate() {
+  TRACE_CPUPROFILER_EVENT_SCOPE(ASceneCaptureSensor::EnqueueRenderSceneImmediate);
+  // Creates an snapshot of the scene, requieres bCaptureEveryFrame = false.
+  GetCaptureComponent2D()->CaptureScene();
+
+  // // Equivalent to "CaptureComponent2D->CaptureScene" + (optional) GBuffer extraction.
+  // CaptureSceneExtended();
+}
+
+constexpr const TCHAR* GBufferNames[] =
+{
+  TEXT("SceneColor"),
+  TEXT("SceneDepth"),
+  TEXT("SceneStencil"),
+  TEXT("GBufferA"),
+  TEXT("GBufferB"),
+  TEXT("GBufferC"),
+  TEXT("GBufferD"),
+  TEXT("GBufferE"),
+  TEXT("GBufferF"),
+  TEXT("Velocity"),
+  TEXT("SSAO"),
+  TEXT("CustomDepth"),
+  TEXT("CustomStencil"),
+};
+
+template <EGBufferTextureID ID, typename T>
+static void CheckGBufferStream(T& GBufferStream, FGBufferRequest& GBuffer)
+{
+  GBufferStream.bIsUsed = GBufferStream.Stream.AreClientsListening();
+  if (GBufferStream.bIsUsed)
+    GBuffer.MarkAsRequested(ID);
+}
+
+static uint64 Prior = 0;
+
+void ASceneCaptureSensor::CaptureSceneExtended()
+{
+  auto GBufferPtr = MakeUnique<FGBufferRequest>();
+  auto& GBuffer = *GBufferPtr;
+
+  CheckGBufferStream<EGBufferTextureID::SceneColor>(CameraGBuffers.SceneColor, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::SceneDepth>(CameraGBuffers.SceneDepth, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::SceneStencil>(CameraGBuffers.SceneStencil, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::GBufferA>(CameraGBuffers.GBufferA, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::GBufferB>(CameraGBuffers.GBufferB, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::GBufferC>(CameraGBuffers.GBufferC, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::GBufferD>(CameraGBuffers.GBufferD, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::GBufferE>(CameraGBuffers.GBufferE, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::GBufferF>(CameraGBuffers.GBufferF, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::Velocity>(CameraGBuffers.Velocity, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::SSAO>(CameraGBuffers.SSAO, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::CustomDepth>(CameraGBuffers.CustomDepth, GBuffer);
+  CheckGBufferStream<EGBufferTextureID::CustomStencil>(CameraGBuffers.CustomStencil, GBuffer);
+
+  if (GBufferPtr->DesiredTexturesMask == 0)
+  {
+    // Creates an snapshot of the scene, requieres bCaptureEveryFrame = false.
+    CaptureComponent2D->CaptureScene();
+    return;
+  }
+
+  if (Prior != GBufferPtr->DesiredTexturesMask)
+    UE_LOG(LogCarla, Verbose, TEXT("GBuffer selection changed (%llu)."), GBufferPtr->DesiredTexturesMask);
+
+  Prior = GBufferPtr->DesiredTexturesMask;
+  GBufferPtr->OwningActor = CaptureComponent2D->GetViewOwner();
+
+#define CARLA_GBUFFER_DISABLE_TAA // Temporarily disable TAA to avoid jitter.
+
+#ifdef CARLA_GBUFFER_DISABLE_TAA
+  bool bTAA = CaptureComponent2D->ShowFlags.TemporalAA;
+  if (bTAA) {
+    CaptureComponent2D->ShowFlags.TemporalAA = false;
+  }
+#endif
+
+  CaptureComponent2D->CaptureSceneWithGBuffer(GBuffer);
+
+#ifdef CARLA_GBUFFER_DISABLE_TAA
+  if (bTAA) {
+    CaptureComponent2D->ShowFlags.TemporalAA = true;
+  }
+#undef CARLA_GBUFFER_DISABLE_TAA
+#endif
+
+  AsyncTask(ENamedThreads::AnyHiPriThreadNormalTask, [this, GBuffer = MoveTemp(GBufferPtr)]() mutable
+  {
+    SendGBufferTextures(*GBuffer);
+  });
+}
+
+void ASceneCaptureSensor::SendGBufferTextures(FGBufferRequest& GBuffer)
+{
+  SendGBufferTexturesInternal(*this, GBuffer);
+}
+
 void ASceneCaptureSensor::BeginPlay()
 {
   using namespace SceneCaptureSensor_local_ns;
 
-  // Setup render target.
-
   // Determine the gamma of the player.
-
   const bool bInForceLinearGamma = !bEnablePostProcessingEffects;
 
-  CaptureRenderTarget->InitCustomFormat(ImageWidth, ImageHeight, PF_B8G8R8A8, bInForceLinearGamma);
+  CaptureRenderTarget->InitCustomFormat(ImageWidth, ImageHeight, bEnable16BitFormat ? PF_FloatRGBA : PF_B8G8R8A8,
+                                        bInForceLinearGamma);
 
   if (bEnablePostProcessingEffects)
   {
@@ -414,16 +567,7 @@ void ASceneCaptureSensor::BeginPlay()
   // Call derived classes to set up their things.
   SetUpSceneCaptureComponent(*CaptureComponent2D);
 
-  if (bEnablePostProcessingEffects &&
-      (SceneCaptureSensor_local_ns::GetQualitySettings(GetWorld()) == EQualityLevel::Low))
-  {
-    CaptureComponent2D->CaptureSource = ESceneCaptureSource::SCS_SceneColorHDRNoAlpha;
-  }
-  else
-  {
-    // LDR is faster than HDR (smaller bitmap array).
-    CaptureComponent2D->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
-  }
+  CaptureComponent2D->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
 
   CaptureComponent2D->UpdateContent();
   CaptureComponent2D->Activate();
@@ -436,13 +580,18 @@ void ASceneCaptureSensor::BeginPlay()
   SceneCaptureSensor_local_ns::ConfigureShowFlags(CaptureComponent2D->ShowFlags,
       bEnablePostProcessingEffects);
 
+  // This ensures the camera is always spawning the raindrops in case the
+  // weather was previously set to have rain.
+  GetEpisode().GetWeather()->NotifyWeather(this);
+
   Super::BeginPlay();
 }
 
-void ASceneCaptureSensor::Tick(float DeltaTime)
+void ASceneCaptureSensor::PrePhysTick(float DeltaSeconds)
 {
-  Super::Tick(DeltaTime);
-  // Add the view information every tick. Its only used for one tick and then
+  Super::PrePhysTick(DeltaSeconds);
+
+  // Add the view information every tick. It's only used for one tick and then
   // removed by the streamer.
   IStreamingManager::Get().AddViewInformation(
       CaptureComponent2D->GetComponentLocation(),
@@ -450,9 +599,15 @@ void ASceneCaptureSensor::Tick(float DeltaTime)
       ImageWidth / FMath::Tan(CaptureComponent2D->FOVAngle));
 }
 
+void ASceneCaptureSensor::PostPhysTick(UWorld *World, ELevelTick TickType, float DeltaTime)
+{
+  Super::PostPhysTick(World, TickType, DeltaTime);
+}
+
 void ASceneCaptureSensor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
   Super::EndPlay(EndPlayReason);
+  FlushRenderingCommands();
   SCENE_CAPTURE_COUNTER = 0u;
 }
 
@@ -466,22 +621,19 @@ namespace SceneCaptureSensor_local_ns {
   {
     auto &PostProcessSettings = CaptureComponent2D.PostProcessSettings;
 
-    // Depth of field
-    PostProcessSettings.bOverride_DepthOfFieldMethod = true;
-    PostProcessSettings.DepthOfFieldMethod = EDepthOfFieldMethod::DOFM_CircleDOF;
-    PostProcessSettings.bOverride_DepthOfFieldFocalDistance = true;
-    PostProcessSettings.bOverride_DepthOfFieldDepthBlurAmount = true;
-    PostProcessSettings.bOverride_DepthOfFieldDepthBlurRadius = true;
-
     // Exposure
     PostProcessSettings.bOverride_AutoExposureMethod = true;
-    PostProcessSettings.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
+    PostProcessSettings.AutoExposureMethod = EAutoExposureMethod::AEM_Histogram;
     PostProcessSettings.bOverride_AutoExposureBias = true;
     PostProcessSettings.bOverride_AutoExposureMinBrightness = true;
     PostProcessSettings.bOverride_AutoExposureMaxBrightness = true;
     PostProcessSettings.bOverride_AutoExposureSpeedUp = true;
     PostProcessSettings.bOverride_AutoExposureSpeedDown = true;
-    PostProcessSettings.bOverride_AutoExposureCalibrationConstant = true;
+    PostProcessSettings.bOverride_AutoExposureCalibrationConstant_DEPRECATED = true;
+    PostProcessSettings.bOverride_HistogramLogMin = true;
+    PostProcessSettings.HistogramLogMin = 1.0f;
+    PostProcessSettings.bOverride_HistogramLogMax = true;
+    PostProcessSettings.HistogramLogMax = 12.0f;
 
     // Camera
     PostProcessSettings.bOverride_CameraShutterSpeed = true;
@@ -508,6 +660,44 @@ namespace SceneCaptureSensor_local_ns {
     // Color Grading
     PostProcessSettings.bOverride_WhiteTemp = true;
     PostProcessSettings.bOverride_WhiteTint = true;
+    PostProcessSettings.bOverride_ColorContrast = true;
+#if PLATFORM_LINUX
+  // Looks like Windows and Linux have different outputs with the
+  // same exposure compensation, this fixes it.
+  PostProcessSettings.ColorContrast = FVector4(1.2f, 1.2f, 1.2f, 1.0f);
+#endif
+
+    // Chromatic Aberration
+    PostProcessSettings.bOverride_SceneFringeIntensity = true;
+    PostProcessSettings.bOverride_ChromaticAberrationStartOffset = true;
+
+    // Ambient Occlusion
+    PostProcessSettings.bOverride_AmbientOcclusionIntensity = true;
+    PostProcessSettings.AmbientOcclusionIntensity = 0.5f;
+    PostProcessSettings.bOverride_AmbientOcclusionRadius = true;
+    PostProcessSettings.AmbientOcclusionRadius = 100.0f;
+    PostProcessSettings.bOverride_AmbientOcclusionStaticFraction = true;
+    PostProcessSettings.AmbientOcclusionStaticFraction = 1.0f;
+    PostProcessSettings.bOverride_AmbientOcclusionFadeDistance = true;
+    PostProcessSettings.AmbientOcclusionFadeDistance = 50000.0f;
+    PostProcessSettings.bOverride_AmbientOcclusionPower = true;
+    PostProcessSettings.AmbientOcclusionPower = 2.0f;
+    PostProcessSettings.bOverride_AmbientOcclusionBias = true;
+    PostProcessSettings.AmbientOcclusionBias = 3.0f;
+    PostProcessSettings.bOverride_AmbientOcclusionQuality = true;
+    PostProcessSettings.AmbientOcclusionQuality = 100.0f;
+
+    // Bloom
+    PostProcessSettings.bOverride_BloomMethod = true;
+    PostProcessSettings.BloomMethod = EBloomMethod::BM_SOG;
+    PostProcessSettings.bOverride_BloomIntensity = true;
+    PostProcessSettings.BloomIntensity = 0.675f;
+    PostProcessSettings.bOverride_BloomThreshold = true;
+    PostProcessSettings.BloomThreshold = -1.0f;
+
+    // Lens
+    PostProcessSettings.bOverride_LensFlareIntensity = true;
+    PostProcessSettings.LensFlareIntensity = 0.1;
   }
 
   // Remove the show flags that might interfere with post-processing effects
@@ -523,7 +713,8 @@ namespace SceneCaptureSensor_local_ns {
 
     ShowFlags.SetAmbientOcclusion(false);
     ShowFlags.SetAntiAliasing(false);
-    ShowFlags.SetAtmosphericFog(false);
+    ShowFlags.SetVolumetricFog(false);
+    // ShowFlags.SetAtmosphericFog(false);
     // ShowFlags.SetAudioRadius(false);
     // ShowFlags.SetBillboardSprites(false);
     ShowFlags.SetBloom(false);
@@ -645,11 +836,10 @@ namespace SceneCaptureSensor_local_ns {
     // ShowFlags.SetVertexColors(false);
     // ShowFlags.SetVignette(false);
     // ShowFlags.SetVisLog(false);
-    ShowFlags.SetVisualizeAdaptiveDOF(false);
-    ShowFlags.SetVisualizeBloom(false);
+    // ShowFlags.SetVisualizeAdaptiveDOF(false);
+    // ShowFlags.SetVisualizeBloom(false);
     ShowFlags.SetVisualizeBuffer(false);
     ShowFlags.SetVisualizeDistanceFieldAO(false);
-    ShowFlags.SetVisualizeDistanceFieldGI(false);
     ShowFlags.SetVisualizeDOF(false);
     ShowFlags.SetVisualizeHDR(false);
     ShowFlags.SetVisualizeLightCulling(false);

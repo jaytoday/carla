@@ -187,16 +187,17 @@ class World(object):
         self.hud.render(display)
 
     def destroy(self):
-        actors = [
+        sensors = [
             self.camera_manager.sensor,
             self.collision_sensor.sensor,
             self.lane_invasion_sensor.sensor,
-            self.gnss_sensor.sensor,
-            self.player]
-        for actor in actors:
-            if actor is not None:
-                actor.destroy()
-
+            self.gnss_sensor.sensor]
+        for sensor in sensors:
+            if sensor is not None:
+                sensor.stop()
+                sensor.destroy()
+        if self.player is not None:
+            self.player.destroy()
 
 # ==============================================================================
 # -- DualControl -----------------------------------------------------------
@@ -383,11 +384,12 @@ class HUD(object):
     def __init__(self, width, height):
         self.dim = (width, height)
         font = pygame.font.Font(pygame.font.get_default_font(), 20)
-        fonts = [x for x in pygame.font.get_fonts() if 'mono' in x]
+        font_name = 'courier' if os.name == 'nt' else 'mono'
+        fonts = [x for x in pygame.font.get_fonts() if font_name in x]
         default_font = 'ubuntumono'
         mono = default_font if default_font in fonts else fonts[0]
         mono = pygame.font.match_font(mono)
-        self._font_mono = pygame.font.Font(mono, 14)
+        self._font_mono = pygame.font.Font(mono, 12 if os.name == 'nt' else 14)
         self._notifications = FadingText(font, (width, 40), (0, height - 40))
         self.help = HelpText(pygame.font.Font(mono, 24), width, height)
         self.server_fps = 0
@@ -424,7 +426,7 @@ class HUD(object):
             'Client:  % 16.0f FPS' % clock.get_fps(),
             '',
             'Vehicle: % 20s' % get_actor_display_name(world.player, truncate=20),
-            'Map:     % 20s' % world.world.map_name,
+            'Map:     % 20s' % world.world.get_map().name.split('/')[-1],
             'Simulation time: % 12s' % datetime.timedelta(seconds=int(self.simulation_time)),
             '',
             'Speed:   % 15.0f km/h' % (3.6 * math.sqrt(v.x**2 + v.y**2 + v.z**2)),
@@ -694,7 +696,7 @@ class CameraManager(object):
                 bp.set_attribute('image_size_x', str(hud.dim[0]))
                 bp.set_attribute('image_size_y', str(hud.dim[1]))
             elif item[0].startswith('sensor.lidar'):
-                bp.set_attribute('range', '5000')
+                bp.set_attribute('range', '50')
             item.append(bp)
         self.index = None
 
@@ -740,7 +742,7 @@ class CameraManager(object):
             return
         if self.sensors[self.index][0].startswith('sensor.lidar'):
             points = np.frombuffer(image.raw_data, dtype=np.dtype('f4'))
-            points = np.reshape(points, (int(points.shape[0] / 3), 3))
+            points = np.reshape(points, (int(points.shape[0] / 4), 4))
             lidar_data = np.array(points[:, :2])
             lidar_data *= min(self.hud.dim) / 100.0
             lidar_data += (0.5 * self.hud.dim[0], 0.5 * self.hud.dim[1])

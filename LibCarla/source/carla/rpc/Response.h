@@ -10,7 +10,16 @@
 #include "carla/MsgPackAdaptors.h"
 
 #include <boost/optional.hpp>
-#include <boost/variant.hpp>
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4583)
+#pragma warning(disable:4582)
+#include <boost/variant2/variant.hpp>
+#pragma warning(pop)
+#else
+#include <boost/variant2/variant.hpp>
+#endif
 
 #include <string>
 
@@ -33,7 +42,10 @@ namespace rpc {
 
   private:
 
-    std::string _what;
+    /// @todo Needs initialization, empty strings end up calling memcpy on a
+    /// nullptr. Possibly a bug in MsgPack but could also be our specialization
+    /// for variants
+    std::string _what{"unknown error"};
   };
 
   template <typename T>
@@ -55,7 +67,7 @@ namespace rpc {
     }
 
     bool HasError() const {
-      return _data.which() == 0;
+      return _data.index() == 0;
     }
 
     template <typename... Ts>
@@ -65,17 +77,17 @@ namespace rpc {
 
     const error_type &GetError() const {
       DEBUG_ASSERT(HasError());
-      return boost::get<error_type>(_data);
+      return boost::variant2::get<error_type>(_data);
     }
 
     value_type &Get() {
       DEBUG_ASSERT(!HasError());
-      return boost::get<value_type>(_data);
+      return boost::variant2::get<value_type>(_data);
     }
 
     const value_type &Get() const {
       DEBUG_ASSERT(!HasError());
-      return boost::get<value_type>(_data);
+      return boost::variant2::get<value_type>(_data);
     }
 
     operator bool() const {
@@ -86,7 +98,7 @@ namespace rpc {
 
   private:
 
-    boost::variant<error_type, value_type> _data;
+    boost::variant2::variant<error_type, value_type> _data;
   };
 
   template <>

@@ -110,7 +110,7 @@ def main():
             npc = world.try_spawn_actor(bp, transform)
             if npc is not None:
                 actor_list.append(npc)
-                npc.set_autopilot()
+                npc.set_autopilot(True)
                 print('created %s' % npc.type_id)
 
         time.sleep(5)
@@ -118,8 +118,8 @@ def main():
     finally:
 
         print('destroying actors')
-        for actor in actor_list:
-            actor.destroy()
+        camera.destroy()
+        client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
         print('done.')
 
 

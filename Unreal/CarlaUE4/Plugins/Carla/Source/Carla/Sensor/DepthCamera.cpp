@@ -7,6 +7,8 @@
 #include "Carla.h"
 #include "Carla/Sensor/DepthCamera.h"
 
+#include "Carla/Actor/ActorBlueprintFunctionLibrary.h"
+
 #include "Carla/Sensor/PixelReader.h"
 
 FActorDefinition ADepthCamera::GetSensorDefinition()
@@ -17,7 +19,9 @@ FActorDefinition ADepthCamera::GetSensorDefinition()
 ADepthCamera::ADepthCamera(const FObjectInitializer &ObjectInitializer)
   : Super(ObjectInitializer)
 {
-  LoadPostProcessingMaterial(
+  AddPostProcessingMaterial(
+      TEXT("Material'/Carla/PostProcessingMaterials/PhysicLensDistortion.PhysicLensDistortion'"));
+  AddPostProcessingMaterial(
 #if PLATFORM_LINUX
       TEXT("Material'/Carla/PostProcessingMaterials/DepthEffectMaterial_GLSL.DepthEffectMaterial_GLSL'")
 #else
@@ -26,8 +30,8 @@ ADepthCamera::ADepthCamera(const FObjectInitializer &ObjectInitializer)
   );
 }
 
-void ADepthCamera::Tick(float DeltaTime)
+void ADepthCamera::PostPhysTick(UWorld *World, ELevelTick TickType, float DeltaSeconds)
 {
-  Super::Tick(DeltaTime);
-  FPixelReader::SendPixelsInRenderThread(*this);
+  TRACE_CPUPROFILER_EVENT_SCOPE(ADepthCamera::PostPhysTick);
+  FPixelReader::SendPixelsInRenderThread<ADepthCamera, FColor>(*this);
 }

@@ -6,8 +6,21 @@
 
 #pragma once
 
+#include "CarlaRecorderEventAdd.h"
+#include "CarlaRecorderPosition.h"
+#include "CarlaRecorderState.h"
+#include "CarlaRecorderAnimBiker.h"
+#include "CarlaRecorderAnimWalker.h"
+#include "CarlaRecorderAnimVehicle.h"
+#include "CarlaRecorderAnimVehicleWheels.h"
+#include "CarlaRecorderLightVehicle.h"
+#include "CarlaRecorderLightScene.h"
+#include "CarlaRecorderWalkerBones.h"
+
+#include <unordered_map>
+
 class UCarlaEpisode;
-class FActorView;
+class FCarlaActor;
 struct FActorDescription;
 
 class CarlaReplayerHelper
@@ -26,7 +39,10 @@ public:
       FVector Location,
       FVector Rotation,
       CarlaRecorderActorDescription Description,
-      uint32_t DesiredId);
+      uint32_t DesiredId,
+      bool bIgnoreHero,
+      bool bIgnoreSpectator,
+      bool ReplaySensors);
 
   // replay event for removing actor
   bool ProcessReplayerEventDel(uint32_t DatabaseId);
@@ -43,35 +59,53 @@ public:
   // set the animation for Vehicles
   void ProcessReplayerAnimVehicle(CarlaRecorderAnimVehicle Vehicle);
 
+  // set the animation for Vehicles Wheels
+  void ProcessReplayerAnimVehicleWheels(CarlaRecorderAnimWheels Vehicle);
+
   // set the animation for walkers
   void ProcessReplayerAnimWalker(CarlaRecorderAnimWalker Walker);
 
+  // set the animation for bikers
+  void ProcessReplayerAnimBiker(CarlaRecorderAnimBiker Biker);
+
+  // set the vehicle light
+  void ProcessReplayerLightVehicle(CarlaRecorderLightVehicle LightVehicle);
+
+  // set scene lights
+  void ProcessReplayerLightScene(CarlaRecorderLightScene LightScene);
+
+  // set walker bones
+  void ProcessReplayerWalkerBones(const CarlaRecorderWalkerBones &Walker);
+
   // replay finish
-  bool ProcessReplayerFinish(bool bApplyAutopilot);
+  bool ProcessReplayerFinish(bool bApplyAutopilot, bool bIgnoreHero, std::unordered_map<uint32_t, bool> &IsHero);
 
   // set the camera position to follow an actor
   bool SetCameraPosition(uint32_t Id, FVector Offset, FQuat Rotation);
 
   // set the velocity of the actor
-  void SetActorVelocity(const FActorView &ActorView, FVector Velocity);
+  void SetActorVelocity(FCarlaActor *CarlaActor, FVector Velocity);
 
   // set the animation speed for walkers
   void SetWalkerSpeed(uint32_t ActorId, float Speed);
+
+  void RemoveStaticProps();
 
 private:
 
   UCarlaEpisode *Episode {nullptr};
 
-  std::pair<int, FActorView>TryToCreateReplayerActor(
+  std::pair<int, FCarlaActor*>TryToCreateReplayerActor(
     FVector &Location,
     FVector &Rotation,
     FActorDescription &ActorDesc,
-    uint32_t DesiredId);
+    uint32_t DesiredId,
+    bool SpawnSensors);
 
-  AActor *FindTrafficLightAt(FVector Location);
+  FCarlaActor* FindTrafficLightAt(FVector Location);
 
   // enable / disable physics for an actor
-  bool SetActorSimulatePhysics(const FActorView &ActorView, bool bEnabled);
+  bool SetActorSimulatePhysics(FCarlaActor *CarlaActor, bool bEnabled);
   // enable / disable autopilot for an actor
-  bool SetActorAutopilot(const FActorView &ActorView, bool bEnabled, bool bKeepState = false);
+  bool SetActorAutopilot(FCarlaActor *CarlaActor, bool bEnabled, bool bKeepState = false);
 };

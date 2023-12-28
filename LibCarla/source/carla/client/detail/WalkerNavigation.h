@@ -10,7 +10,6 @@
 #include "carla/nav/Navigation.h"
 #include "carla/NonCopyable.h"
 #include "carla/client/Timestamp.h"
-#include "carla/client/detail/EpisodeProxy.h"
 #include "carla/rpc/ActorId.h"
 
 #include <memory>
@@ -19,15 +18,16 @@ namespace carla {
 namespace client {
 namespace detail {
 
-  class Client;
+  class Episode;
   class EpisodeState;
+  class Simulator;
 
   class WalkerNavigation
     : public std::enable_shared_from_this<WalkerNavigation>,
     private NonCopyable {
   public:
 
-    explicit WalkerNavigation(Client & client);
+    explicit WalkerNavigation(std::weak_ptr<Simulator> simulator);
 
     void RegisterWalker(ActorId walker_id, ActorId controller_id) {
       // add to list
@@ -50,7 +50,7 @@ namespace detail {
 
     void RemoveWalker(ActorId walker_id) {
       // remove the walker in the crowd
-      _nav.RemoveWalker(walker_id);
+      _nav.RemoveAgent(walker_id);
     }
 
     void AddWalker(ActorId walker_id, carla::geom::Location location) {
@@ -58,12 +58,12 @@ namespace detail {
       _nav.AddWalker(walker_id, location);
     }
 
-    void Tick(const EpisodeState &episode_state);
+    void Tick(std::shared_ptr<Episode> episode);
 
     // Get Random location in nav mesh
     boost::optional<geom::Location> GetRandomLocation() {
       geom::Location random_location(0, 0, 0);
-      if (_nav.GetRandomLocation(random_location, 1.0f))
+      if (_nav.GetRandomLocation(random_location))
         return boost::optional<geom::Location>(random_location);
       else
         return {};
@@ -79,9 +79,18 @@ namespace detail {
       return _nav.SetWalkerMaxSpeed(id, max_speed);
     }
 
+    // set percentage of pedestrians that can cross the road
+    void SetPedestriansCrossFactor(float percentage) {
+      _nav.SetPedestriansCrossFactor(percentage);
+    }
+
+    void SetPedestriansSeed(unsigned int seed) {
+      _nav.SetSeed(seed);
+    }
+
   private:
 
-    Client &_client;
+    std::weak_ptr<Simulator> _simulator;
 
     unsigned long _next_check_index;
 
@@ -94,8 +103,10 @@ namespace detail {
 
     AtomicList<WalkerHandle> _walkers;
 
-    // check a few walkers and if they don't exist then remove from the crowd
+    /// check a few walkers and if they don't exist then remove from the crowd
     void CheckIfWalkerExist(std::vector<WalkerHandle> walkers, const EpisodeState &state);
+    /// add/update/delete all vehicles in crowd
+    void UpdateVehiclesInCrowd(std::shared_ptr<Episode> episode, bool show_debug = false);
   };
 
 } // namespace detail

@@ -50,10 +50,28 @@ namespace geom {
        return std::sqrt(SquaredLength());
     }
 
+    float SquaredLength2D() const {
+      return x * x + y * y;
+    }
+
+    float Length2D() const {
+      return std::sqrt(SquaredLength2D());
+    }
+
+    Vector3D Abs() const {
+       return Vector3D(abs(x), abs(y), abs(z));
+    }
+
     Vector3D MakeUnitVector() const {
       const float length = Length();
       DEVELOPMENT_ASSERT(length > 2.0f * std::numeric_limits<float>::epsilon());
       const float k = 1.0f / length;
+      return Vector3D(x * k, y * k, z * k);
+    }
+
+    Vector3D MakeSafeUnitVector(const float epsilon) const  {
+      const float length = Length();
+      const float k = (length > std::max(epsilon, 0.0f)) ? (1.0f / length) : 1.0f;
       return Vector3D(x * k, y * k, z * k);
     }
 
@@ -83,6 +101,13 @@ namespace geom {
     friend Vector3D operator-(Vector3D lhs, const Vector3D &rhs) {
       lhs -= rhs;
       return lhs;
+    }
+
+    Vector3D& operator-=(const float f) {
+      x -= f;
+      y -= f;
+      z -= f;
+      return *this;
     }
 
     Vector3D &operator*=(float rhs) {
@@ -136,6 +161,12 @@ namespace geom {
     // =========================================================================
 
 #ifdef LIBCARLA_INCLUDED_FROM_UE4
+
+    /// These 2 methods are explicitly deleted to avoid creating them by other users,
+    /// unlike locations, some vectors have units and some don't, by removing
+    /// these methods we found several places were the conversion from cm to m was missing
+    Vector3D(const FVector &v) = delete;
+    Vector3D& operator=(const FVector &rhs) = delete;
 
     /// Return a Vector3D converted from centimeters to meters.
     Vector3D ToMeters() const {

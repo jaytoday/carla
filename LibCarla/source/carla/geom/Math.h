@@ -28,6 +28,12 @@ namespace geom {
     }
 
     template <typename T>
+    static constexpr T Pi2() {
+      static_assert(std::is_floating_point<T>::value, "type must be floating point");
+      return static_cast<T>(static_cast<T>(2) * Pi<T>());
+    }
+
+    template <typename T>
     static constexpr T ToDegrees(T rad) {
       static_assert(std::is_floating_point<T>::value, "type must be floating point");
       return rad * (T(180.0) / Pi<T>());
@@ -47,6 +53,10 @@ namespace geom {
     template <typename T>
     static T Square(const T &a) {
       return a * a;
+    }
+
+    static auto Cross(const Vector3D &a, const Vector3D &b) {
+      return Vector3D(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
     }
 
     static auto Dot(const Vector3D &a, const Vector3D &b) {
@@ -72,6 +82,13 @@ namespace geom {
     static auto Distance2D(const Vector3D &a, const Vector3D &b) {
       return std::sqrt(DistanceSquared2D(a, b));
     }
+
+    static float LinearLerp(float a, float b, float f) {
+      return a * (1.0f - f) + (b * f);
+    }
+
+    /// Returns the angle between 2 vectors in radians
+    static double GetVectorAngle(const Vector3D &a, const Vector3D &b);
 
     /// Returns a pair containing:
     /// - @b first:  distance from v to p' where p' = p projected on segment
@@ -100,7 +117,16 @@ namespace geom {
 
     /// Compute the unit vector pointing towards the X-axis of @a rotation.
     static Vector3D GetForwardVector(const Rotation &rotation);
-  };
 
+    /// Compute the unit vector pointing towards the Y-axis of @a rotation.
+    static Vector3D GetRightVector(const Rotation &rotation);
+
+    /// Compute the unit vector pointing towards the Y-axis of @a rotation.
+    static Vector3D GetUpVector(const Rotation &rotation);
+
+    // Helper function to generate a vector of consecutive integers from a to b
+    static std::vector<int> GenerateRange(int a, int b);
+
+  };
 } // namespace geom
 } // namespace carla

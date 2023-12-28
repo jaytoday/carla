@@ -8,7 +8,15 @@
 
 #include <fstream>
 
+#include "CarlaRecorderTraficLightTime.h"
+#include "CarlaRecorderPhysicsControl.h"
+#include "CarlaRecorderPlatformTime.h"
+#include "CarlaRecorderBoundingBox.h"
+#include "CarlaRecorderKinematics.h"
+#include "CarlaRecorderLightScene.h"
+#include "CarlaRecorderLightVehicle.h"
 #include "CarlaRecorderAnimWalker.h"
+#include "CarlaRecorderAnimVehicle.h"
 #include "CarlaRecorderCollision.h"
 #include "CarlaRecorderEventAdd.h"
 #include "CarlaRecorderEventDel.h"
@@ -17,6 +25,7 @@
 #include "CarlaRecorderInfo.h"
 #include "CarlaRecorderPosition.h"
 #include "CarlaRecorderState.h"
+#include "CarlaRecorderWalkerBones.h"
 
 class CarlaRecorderQuery
 {
@@ -52,6 +61,14 @@ private:
   CarlaRecorderStateTrafficLight StateTraffic;
   CarlaRecorderAnimVehicle Vehicle;
   CarlaRecorderAnimWalker Walker;
+  CarlaRecorderLightVehicle LightVehicle;
+  CarlaRecorderLightScene LightScene;
+  CarlaRecorderKinematics Kinematics;
+  CarlaRecorderActorBoundingBox ActorBoundingBox;
+  CarlaRecorderPlatformTime PlatformTime;
+  CarlaRecorderPhysicsControl PhysicsControl;
+  CarlaRecorderTrafficLightTime TrafficLightTime;
+  CarlaRecorderWalkerBones WalkerBones;
 
   // read next header packet
   bool ReadHeader(void);

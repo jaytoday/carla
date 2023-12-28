@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Computer Vision Center (CVC) at the Universitat Autonoma
+// Copyright (c) 2019 Computer Vision Center (CVC) at the Universitat Autonoma
 // de Barcelona (UAB).
 //
 // This work is licensed under the terms of the MIT license.
@@ -47,9 +47,18 @@ static boost::python::object OptionalToPythonObject(OptionalT &optional) {
       return self.fn(std::forward<T1_>(t1), std::forward<T2_>(t2), std::forward<T3_>(t3), std::forward<T4_>(t4)); \
     }
 
+// Convenient for requests with 5 arguments.
+#define CALL_WITHOUT_GIL_5(cls, fn, T1_, T2_, T3_, T4_, T5_) +[](cls &self, T1_ t1, T2_ t2, T3_ t3, T4_ t4, T5_ t5) { \
+      carla::PythonUtil::ReleaseGIL unlock; \
+      return self.fn(std::forward<T1_>(t1), std::forward<T2_>(t2), std::forward<T3_>(t3), std::forward<T4_>(t4), std::forward<T5_>(t5)); \
+    }
+
 // Convenient for const requests without arguments.
 #define CONST_CALL_WITHOUT_GIL(cls, fn) CALL_WITHOUT_GIL(const cls, fn)
 #define CONST_CALL_WITHOUT_GIL_1(cls, fn, T1_) CALL_WITHOUT_GIL_1(const cls, fn, T1_)
+#define CONST_CALL_WITHOUT_GIL_2(cls, fn, T1_, T2_) CALL_WITHOUT_GIL_2(const cls, fn, T1_, T2_)
+#define CONST_CALL_WITHOUT_GIL_3(cls, fn, T1_, T2_, T3_) CALL_WITHOUT_GIL_3(const cls, fn, T1_, T2_, T3_)
+#define CONST_CALL_WITHOUT_GIL_4(cls, fn, T1_, T2_, T3_, T4_) CALL_WITHOUT_GIL_4(const cls, fn, T1_, T2_, T3_, T4_)
 
 // Convenient for const requests that need to make a copy of the returned value.
 #define CALL_RETURNING_COPY(cls, fn) +[](const cls &self) \
@@ -62,6 +71,16 @@ static boost::python::object OptionalToPythonObject(OptionalT &optional) {
         -> std::decay_t<std::result_of_t<decltype(&cls::fn)(cls*, T1_)>> { \
       return self.fn(std::forward<T1_>(t1)); \
     }
+
+template<typename T>
+std::vector<T> PythonLitstToVector(boost::python::list &input) {
+  std::vector<T> result;
+  boost::python::ssize_t list_size = boost::python::len(input);
+  for (boost::python::ssize_t i = 0; i < list_size; ++i) {
+    result.emplace_back(boost::python::extract<T>(input[i]));
+  }
+  return result;
+}
 
 // Convenient for const requests that needs to convert the return value to a
 // Python list.
@@ -91,6 +110,14 @@ static boost::python::object OptionalToPythonObject(OptionalT &optional) {
       return result; \
     }
 
+#define CALL_RETURNING_LIST_3(cls, fn, T1_, T2_, T3_) +[](const cls &self, T1_ t1, T2_ t2, T3_ t3) { \
+      boost::python::list result; \
+      for (auto &&item : self.fn(std::forward<T1_>(t1), std::forward<T2_>(t2), std::forward<T3_>(t3))) { \
+        result.append(item); \
+      } \
+      return result; \
+    }
+
 #define CALL_RETURNING_OPTIONAL(cls, fn) +[](const cls &self) { \
       auto optional = self.fn(); \
       return OptionalToPythonObject(optional); \
@@ -101,9 +128,19 @@ static boost::python::object OptionalToPythonObject(OptionalT &optional) {
       return OptionalToPythonObject(optional); \
     }
 
+#define CALL_RETURNING_OPTIONAL_2(cls, fn, T1_, T2_) +[](const cls &self, T1_ t1, T2_ t2) { \
+      auto optional = self.fn(std::forward<T1_>(t1), std::forward<T2_>(t2)); \
+      return OptionalToPythonObject(optional); \
+    }
+
+#define CALL_RETURNING_OPTIONAL_3(cls, fn, T1_, T2_, T3_) +[](const cls &self, T1_ t1, T2_ t2, T3_ t3) { \
+      auto optional = self.fn(std::forward<T1_>(t1), std::forward<T2_>(t2), std::forward<T3_>(t3)); \
+      return OptionalToPythonObject(optional); \
+    }
+
 #define CALL_RETURNING_OPTIONAL_WITHOUT_GIL(cls, fn) +[](const cls &self) { \
-      carla::PythonUtil::ReleaseGIL unlock; \
-      auto optional = self.fn(); \
+      auto call = CONST_CALL_WITHOUT_GIL(cls, fn); \
+      auto optional = call(self); \
       return optional.has_value() ? boost::python::object(*optional) : boost::python::object(); \
     }
 
@@ -141,6 +178,12 @@ namespace std {
   template <typename T>
   std::ostream &operator<<(std::ostream &out, const std::vector<T> &vector_of_stuff) {
     return PrintList(out, vector_of_stuff);
+  }
+
+  template <typename T, typename H>
+  std::ostream &operator<<(std::ostream &out, const std::pair<T,H> &data) {
+    out << "(" << data.first << "," << data.second << ")";
+    return out;
   }
 
 } // namespace std
@@ -186,10 +229,19 @@ static auto MakeCallback(boost::python::object callback) {
 #include "Weather.cpp"
 #include "World.cpp"
 #include "Commands.cpp"
+#include "TrafficManager.cpp"
+#include "LightManager.cpp"
+#include "OSM2ODR.cpp"
+
+#ifdef LIBCARLA_RSS_ENABLED
+#include "AdRss.cpp"
+#endif
 
 BOOST_PYTHON_MODULE(libcarla) {
   using namespace boost::python;
+#if PY_MAJOR_VERSION < 3 || PY_MINOR_VERSION < 7
   PyEval_InitThreads();
+#endif
   scope().attr("__path__") = "libcarla";
   export_geom();
   export_control();
@@ -204,4 +256,10 @@ BOOST_PYTHON_MODULE(libcarla) {
   export_client();
   export_exception();
   export_commands();
+  export_trafficmanager();
+  export_lightmanager();
+  #ifdef LIBCARLA_RSS_ENABLED
+  export_ad_rss();
+  #endif
+  export_osm2odr();
 }

@@ -14,6 +14,7 @@
 #include "carla/client/detail/CachedActorList.h"
 #include "carla/client/detail/CallbackList.h"
 #include "carla/client/detail/EpisodeState.h"
+#include "carla/client/detail/EpisodeProxy.h"
 #include "carla/rpc/EpisodeInfo.h"
 
 #include <vector>
@@ -35,7 +36,7 @@ namespace detail {
       private NonCopyable {
   public:
 
-    explicit Episode(Client &client);
+    explicit Episode(Client &client, std::weak_ptr<Simulator> simulator);
 
     ~Episode();
 
@@ -47,14 +48,6 @@ namespace detail {
 
     std::shared_ptr<const EpisodeState> GetState() const {
       return _state.load();
-    }
-
-    std::shared_ptr<WalkerNavigation> CreateNavigationIfMissing();
-
-    std::shared_ptr<WalkerNavigation> GetNavigation() const {
-      auto nav = _navigation.load();
-      DEBUG_ASSERT(nav != nullptr);
-      return nav;
     }
 
     void RegisterActor(rpc::Actor actor) {
@@ -79,25 +72,68 @@ namespace detail {
       _on_tick_callbacks.Remove(id);
     }
 
+    size_t RegisterOnMapChangeEvent(std::function<void(WorldSnapshot)> callback) {
+      return _on_map_change_callbacks.Push(std::move(callback));
+    }
+
+    void RemoveOnMapChangeEvent(size_t id) {
+      _on_map_change_callbacks.Remove(id);
+    }
+
+    size_t RegisterLightUpdateChangeEvent(std::function<void(WorldSnapshot)> callback) {
+      return _on_light_update_callbacks.Push(std::move(callback));
+    }
+
+    void RemoveLightUpdateChangeEvent(size_t id) {
+      _on_light_update_callbacks.Remove(id);
+    }
+
+    void SetPedestriansCrossFactor(float percentage);
+
+    void SetPedestriansSeed(unsigned int seed);
+
+    void AddPendingException(std::string e) {
+      _pending_exceptions = true;
+      _pending_exceptions_msg = e;
+    }
+
+    bool HasMapChangedSinceLastCall();
+
+    std::shared_ptr<WalkerNavigation> CreateNavigationIfMissing();
+
   private:
 
-    Episode(Client &client, const rpc::EpisodeInfo &info);
+    Episode(Client &client, const rpc::EpisodeInfo &info, std::weak_ptr<Simulator> simulator);
 
     void OnEpisodeStarted();
+
+    void OnEpisodeChanged();
 
     Client &_client;
 
     AtomicSharedPtr<const EpisodeState> _state;
 
-    AtomicSharedPtr<WalkerNavigation> _navigation;
+    std::string _pending_exceptions_msg;
 
     CachedActorList _actors;
 
     CallbackList<WorldSnapshot> _on_tick_callbacks;
 
+    CallbackList<WorldSnapshot> _on_map_change_callbacks;
+
+    CallbackList<WorldSnapshot> _on_light_update_callbacks;
+
     RecurrentSharedFuture<WorldSnapshot> _snapshot;
 
+    AtomicSharedPtr<WalkerNavigation> _walker_navigation;
+
     const streaming::Token _token;
+
+    bool _pending_exceptions = false;
+
+    bool _should_update_map = true;
+
+    std::weak_ptr<Simulator> _simulator;
   };
 
 } // namespace detail

@@ -4,44 +4,63 @@
 // This work is licensed under the terms of the MIT license.
 // For a copy, see <https://opensource.org/licenses/MIT>.
 
-#pragma once
-
 #include "Carla.h"
+#include "Carla/Actor/ActorData.h"
 #include "Carla/Actor/ActorRegistry.h"
 
 #include "Carla/Game/Tagger.h"
 #include "Carla/Traffic/TrafficLightBase.h"
 #include "Carla/Util/BoundingBoxCalculator.h"
+#include "Carla/Sensor/Sensor.h"
 
-static FActorView::ActorType FActorRegistry_GetActorType(const FActorView &View)
+#include <compiler/disable-ue4-macros.h>
+#include "carla/streaming/Token.h"
+#include "carla/streaming/detail/Token.h"
+#include <compiler/enable-ue4-macros.h>
+
+
+namespace crp = carla::rpc;
+
+FActorRegistry::IdType FActorRegistry::ID_COUNTER = 0u;
+
+static FCarlaActor::ActorType FActorRegistry_GetActorType(const AActor *Actor)
 {
-  if (!View.IsValid())
+  if (!Actor)
   {
-    return FActorView::ActorType::INVALID;
+    return FCarlaActor::ActorType::INVALID;
   }
-  else if (nullptr != Cast<ACarlaWheeledVehicle>(View.GetActor()))
+
+  if (nullptr != Cast<ACarlaWheeledVehicle>(Actor))
   {
-    return FActorView::ActorType::Vehicle;
+    return FCarlaActor::ActorType::Vehicle;
   }
-  else if (nullptr != Cast<ACharacter>(View.GetActor()))
+  else if (nullptr != Cast<ACharacter>(Actor))
   {
-    return FActorView::ActorType::Walker;
+    return FCarlaActor::ActorType::Walker;
   }
-  else if (nullptr != Cast<ATrafficLightBase>(View.GetActor()))
+  else if (nullptr != Cast<ATrafficLightBase>(Actor))
   {
-    return FActorView::ActorType::TrafficLight;
+    return FCarlaActor::ActorType::TrafficLight;
+  }
+  else if (nullptr != Cast<ATrafficSignBase>(Actor))
+  {
+    return FCarlaActor::ActorType::TrafficSign;
+  }
+  else if (nullptr != Cast<ASensor>(Actor))
+  {
+    return FCarlaActor::ActorType::Sensor;
   }
   else
   {
-    return FActorView::ActorType::Other;
+    return FCarlaActor::ActorType::Other;
   }
 }
 
-static FString GetRelevantTagAsString(const TSet<ECityObjectLabel> &SemanticTags)
+FString CarlaGetRelevantTagAsString(const TSet<crp::CityObjectLabel> &SemanticTags)
 {
   for (auto &&Tag : SemanticTags)
   {
-    if ((Tag != ECityObjectLabel::None) && (Tag != ECityObjectLabel::Other))
+    if ((Tag != crp::CityObjectLabel::None) && (Tag != crp::CityObjectLabel::Other))
     {
       auto Str = ATagger::GetTagAsString(Tag).ToLower();
       return (Str.EndsWith(TEXT("s")) ? Str.LeftChop(1) : Str);
@@ -50,17 +69,29 @@ static FString GetRelevantTagAsString(const TSet<ECityObjectLabel> &SemanticTags
   return TEXT("unknown");
 }
 
-FActorView FActorRegistry::Register(AActor &Actor, FActorDescription Description, IdType DesiredId)
+FCarlaActor* FActorRegistry::Register(AActor &Actor, FActorDescription Description, IdType DesiredId)
 {
-  static IdType ID_COUNTER = 0u;
-  auto Id = ++ID_COUNTER;
+
+  FCarlaActor* CarlaActor = FindCarlaActor(DesiredId);
+  bool IsDormant = CarlaActor && (CarlaActor->IsDormant());
+  if(IsDormant)
+  {
+    CarlaActor->TheActor = &Actor;
+    Actors.Add(DesiredId, &Actor);
+    Ids.Add(&Actor, DesiredId);
+    return CarlaActor;
+  }
+
+  IdType Id = ++FActorRegistry::ID_COUNTER;
 
   if (DesiredId != 0 && Id != DesiredId) {
     // check if the desired Id is free, then use it instead
     if (!Actors.Contains(DesiredId))
+    {
       Id = DesiredId;
       if (ID_COUNTER < Id)
         ID_COUNTER = Id;
+    }
   }
 
   Actors.Emplace(Id, &Actor);
@@ -75,44 +106,45 @@ FActorView FActorRegistry::Register(AActor &Actor, FActorDescription Description
   }
   Ids.Emplace(&Actor, Id);
 
-  auto View = MakeView(Id, Actor, std::move(Description));
+  TSharedPtr<FCarlaActor> View =
+      MakeCarlaActor(Id, Actor, std::move(Description), crp::ActorState::Active);
 
-  auto Result = ActorDatabase.emplace(Id, View);
-  check(Result.second);
-  check(static_cast<size_t>(Actors.Num()) == ActorDatabase.size());
-  return Result.first->second;
+  TSharedPtr<FCarlaActor>& Result = ActorDatabase.Emplace(Id, MoveTemp(View));
+
+  check(static_cast<size_t>(Actors.Num()) == ActorDatabase.Num());
+  return Result.Get();
 }
 
 void FActorRegistry::Deregister(IdType Id)
 {
-  check(Contains(Id));
-  AActor *Actor = Find(Id).GetActor();
-  check(Actor != nullptr);
-  ActorDatabase.erase(Id);
+  FCarlaActor* CarlaActor = FindCarlaActor(Id);
+
+  if(!CarlaActor) return;
+
+  AActor *Actor = CarlaActor->GetActor();
+
+  ActorDatabase.Remove(Id);
   Actors.Remove(Id);
   Ids.Remove(Actor);
-  check(static_cast<size_t>(Actors.Num()) == ActorDatabase.size());
+
+  CarlaActor->TheActor = nullptr;
+
+  check(static_cast<size_t>(Actors.Num()) == ActorDatabase.Num());
 }
 
 void FActorRegistry::Deregister(AActor *Actor)
 {
   check(Actor != nullptr);
-  auto View = Find(Actor);
-  check(View.GetActor() == Actor);
-  Deregister(View.GetActorId());
+  FCarlaActor* CarlaActor = FindCarlaActor(Actor);
+  check(CarlaActor->GetActor() == Actor);
+  Deregister(CarlaActor->GetActorId());
 }
 
-FActorView FActorRegistry::FindOrFake(AActor *Actor) const
-{
-  auto View = Find(Actor);
-  const bool bFakeActor = (View.GetActor() == nullptr) && (Actor != nullptr);
-  return bFakeActor ? MakeView(0u, *Actor, FActorDescription{}) : View;
-}
-
-FActorView FActorRegistry::MakeView(
+TSharedPtr<FCarlaActor> FActorRegistry::MakeCarlaActor(
     IdType Id,
     AActor &Actor,
-    FActorDescription Description) const
+    FActorDescription Description,
+    crp::ActorState InState) const
 {
   auto Info = MakeShared<FActorInfo>();
   Info->Description = std::move(Description);
@@ -122,7 +154,7 @@ FActorView FActorRegistry::MakeView(
   if (Info->Description.Id.IsEmpty())
   {
     // This is a fake actor, let's fake the id based on their semantic tags.
-    Info->Description.Id = TEXT("static.") + GetRelevantTagAsString(Info->SemanticTags);
+    Info->Description.Id = TEXT("static.") + CarlaGetRelevantTagAsString(Info->SemanticTags);
   }
 
   Info->SerializedData.id = Id;
@@ -142,7 +174,83 @@ FActorView FActorRegistry::MakeView(
         std::begin(Token.data),
         std::end(Token.data));
   }
-  auto View = FActorView{Id, Actor, std::move(Info)};
-  View.Type = FActorRegistry_GetActorType(View);
-  return View;
+  auto Type = FActorRegistry_GetActorType(&Actor);
+  TSharedPtr<FCarlaActor> CarlaActor =
+      FCarlaActor::ConstructCarlaActor(
+        Id, &Actor,
+        std::move(Info), Type,
+        InState, Actor.GetWorld());
+  return CarlaActor;
+}
+
+void FActorRegistry::PutActorToSleep(FCarlaActor::IdType Id, UCarlaEpisode* CarlaEpisode)
+{
+  FCarlaActor* CarlaActor = FindCarlaActor(Id);
+
+  // update id maps
+  Actors[Id] = nullptr;
+  AActor* Actor = CarlaActor->GetActor();
+  if(Actor)
+  {
+    Ids.Remove(Actor);
+  }
+
+  CarlaActor->PutActorToSleep(CarlaEpisode);
+  for (const FCarlaActor::IdType& ChildId : CarlaActor->GetChildren())
+  {
+    PutActorToSleep(ChildId, CarlaEpisode);
+  }
+  // TODO: update id maps
+}
+
+void FActorRegistry::WakeActorUp(FCarlaActor::IdType Id, UCarlaEpisode* CarlaEpisode)
+{
+
+  FCarlaActor* CarlaActor = FindCarlaActor(Id);
+  CarlaActor->WakeActorUp(CarlaEpisode);
+  AActor* Actor = CarlaActor->GetActor();
+  if (Actor)
+  {
+    // update ids
+    Actors[Id] = Actor;
+    Ids.Add(Actor, Id);
+    if (CarlaActor->GetParent())
+    {
+      FCarlaActor* ParentView = FindCarlaActor(CarlaActor->GetParent());
+      if (ParentView && !ParentView->IsDormant() && ParentView->GetActor())
+      {
+        AActor* ParentActor = ParentView->GetActor();
+        CarlaEpisode->AttachActors(
+            Actor,
+            ParentActor,
+            static_cast<EAttachmentType>(CarlaActor->GetAttachmentType()));
+      }
+      else
+      {
+        UE_LOG(LogCarla, Error, TEXT("Failed to attach actor %d to %d during wake up"), Id, CarlaActor->GetParent());
+      }
+    }
+  }
+  for (const FCarlaActor::IdType& ChildId : CarlaActor->GetChildren())
+  {
+    WakeActorUp(ChildId, CarlaEpisode);
+  }
+}
+
+FString FActorRegistry::GetDescriptionFromStream(carla::streaming::detail::stream_id_type Id)
+{
+  for (auto &Item : ActorDatabase)
+  {
+    // check for a sensor
+    ASensor *Sensor = Cast<ASensor>(Item.Value->GetActor());
+    if (Sensor == nullptr) continue;
+
+    carla::streaming::detail::token_type token(Sensor->GetToken());
+    if (token.get_stream_id() == Id)
+    {
+      const FActorInfo *Info = Item.Value->GetActorInfo();
+      return Info->Description.Id;
+    }
+  }
+  return FString("");
 }

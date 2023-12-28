@@ -8,22 +8,20 @@
 
 #include "Carla/OpenDrive/OpenDriveActor.h"
 #include "Commandlets/Commandlet.h"
-#include "Containers/Map.h"
-#include "CoreMinimal.h"
-#include "Engine/World.h"
-#include "Misc/PackageName.h"
 #include "Runtime/Engine/Classes/Engine/ObjectLibrary.h"
-#include "UObject/Package.h"
-
-#if WITH_EDITORONLY_DATA
-#include "AssetRegistry/Public/AssetRegistryModule.h"
-#include "Developer/AssetTools/Public/AssetToolsModule.h"
-#include "Developer/AssetTools/Public/IAssetTools.h"
-#endif // WITH_EDITORONLY_DATA
 #include "Runtime/Engine/Classes/Engine/StaticMeshActor.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "PrepareAssetsForCookingCommandlet.generated.h"
 
-/// Struct containing Package Params
+// undef this API to avoid conflict with UE 4.26
+// (see UE_4.26\Engine\Source\Runtime\Core\Public\Windows\HideWindowsPlatformAtomics.h)
+#undef InterlockedCompareExchange
+#undef _InterlockedCompareExchange
+
+/// Struct containing Package with @a Name and @a bOnlyPrepareMaps flag used to
+/// separate the cooking of maps and props across the different stages (Maps
+/// will be imported during make import command and Props will be imported
+/// during make package command)
 USTRUCT()
 struct CARLA_API FPackageParams
 {
@@ -59,7 +57,7 @@ struct CARLA_API FAssetsPaths
 };
 
 UCLASS()
-class UPrepareAssetsForCookingCommandlet
+class CARLA_API UPrepareAssetsForCookingCommandlet
   : public UCommandlet
 {
   GENERATED_BODY()
@@ -77,6 +75,12 @@ public:
   /// structure.
   void LoadWorld(FAssetData &AssetData);
 
+  /// Loads a UWorld object contained in Carla BaseTile into @a AssetData data
+  /// structure.
+  void LoadWorldTile(FAssetData &AssetData);
+
+  void LoadLargeMapWorld(FAssetData &AssetData);
+
   /// Spawns all the static meshes located in @a AssetsPaths inside the World.
   /// There is an option to use Carla materials by setting @a bUseCarlaMaterials
   /// to true, otherwise it will use RoadRunner materials.
@@ -86,11 +90,17 @@ public:
   TArray<AStaticMeshActor *> SpawnMeshesToWorld(
       const TArray<FString> &AssetsPaths,
       bool bUseCarlaMaterials,
-      bool bIsPropsMap = false);
+      int i = -1,
+      int j = -1);
 
   /// Saves the current World, contained in @a AssetData, into @a DestPath
   /// composed of @a PackageName and with @a WorldName.
-  bool SaveWorld(FAssetData &AssetData, FString &PackageName, FString &DestPath, FString &WorldName);
+  bool SaveWorld(
+      FAssetData &AssetData,
+      const FString &PackageName,
+      const FString &DestPath,
+      const FString &WorldName,
+      bool bGenerateSpawnPoints = true);
 
   /// Destroys all the previously spawned actors stored in @a SpawnedActors
   void DestroySpawnedActorsInWorld(TArray<AStaticMeshActor *> &SpawnedActors);
@@ -98,6 +108,26 @@ public:
   /// Gets the Path of all the Assets contained in the package to cook with name
   /// @a PackageName
   FAssetsPaths GetAssetsPathFromPackage(const FString &PackageName) const;
+
+  /// Generates the MapPaths file provided @a AssetsPaths and @a PropsMapPath
+  void GenerateMapPathsFile(const FAssetsPaths &AssetsPaths, const FString &PropsMapPath);
+
+  /// Generates the PackagePat file that contains the path of a package with @a
+  /// PackageName
+  void GeneratePackagePathFile(const FString &PackageName);
+
+  /// For each Map data contained in @MapsPaths, it creates a World, spawn its
+  /// actors inside the world and saves it in .umap format
+  /// in a destination path built from @a PackageName.
+  void PrepareMapsForCooking(const FString &PackageName, const TArray<FMapData> &MapsPaths);
+
+  /// For all the props inside @a PropsPaths, it creates a single World, spawn
+  /// all the props inside the world and saves it in .umap format
+  /// in a destination path built from @a PackageName and @a MapDestPath.
+  void PreparePropsForCooking(FString &PackageName, const TArray<FString> &PropsPaths, FString &MapDestPath);
+
+  /// Return if there is any tile between the assets to cook
+  bool IsMapInTiles(const TArray<FString> &AssetsPaths);
 
 public:
 
@@ -113,7 +143,7 @@ private:
   UPROPERTY()
   TArray<FAssetData> AssetDatas;
 
-  /// Loaded maps from any object library
+  /// Loaded map content from any object library
   UPROPERTY()
   TArray<FAssetData> MapContents;
 
@@ -131,21 +161,33 @@ private:
   UPROPERTY()
   UWorld *World;
 
-  /// Workaround material for MarkingNodes mesh
-  UPROPERTY()
-  UMaterial *MarkingNodeMaterial;
-
   /// Workaround material for the RoadNode mesh
   UPROPERTY()
-  UMaterial *RoadNodeMaterial;
+  UMaterialInstance *RoadNodeMaterial;
 
-  /// Workaround material for the second material for the MarkingNodes
+  /// Material to apply to curbs on the road
   UPROPERTY()
-  UMaterial *MarkingNodeMaterialAux;
+  UMaterialInstance *CurbNodeMaterialInstance;
+
+  /// Material to apply to gutters on the road
+  UPROPERTY()
+  UMaterialInstance *GutterNodeMaterialInstance;
+
+  /// Workaround material for the center lane markings
+  UPROPERTY()
+  UMaterialInstance *MarkingNodeYellow;
+
+  /// Workaround material for exterior lane markings
+  UPROPERTY()
+  UMaterialInstance *MarkingNodeWhite;
 
   /// Workaround material for the TerrainNodes
   UPROPERTY()
-  UMaterial *TerrainNodeMaterial;
+  UMaterialInstance *TerrainNodeMaterialInstance;
+
+  /// Workaround material for the SidewalkNodes
+  UPROPERTY()
+  UMaterialInstance *SidewalkNodeMaterialInstance;
 
   /// Saves @a Package in .umap format in path @a PackagePath inside Unreal
   /// Content folder

@@ -6,6 +6,8 @@
 
 #include "CarlaHUD.h"
 
+#include "GameFramework/PlayerController.h"
+
 void ACarlaHUD::DrawHUD()
 {
   Super::DrawHUD();
@@ -15,6 +17,12 @@ void ACarlaHUD::DrawHUD()
   {
     UE_LOG(LogCarla, Error, TEXT("Can't find player controller!"));
     return;
+  }
+
+  if(DebugVehicle) {
+    float YL = 1600.0f;
+    float Y0 = 0.0f;
+    DebugVehicle->DrawDebug(Canvas, YL, Y0);
   }
 
   double Now = FPlatformTime::Seconds();

@@ -9,6 +9,14 @@
 
 #include "Carla/OpenDrive/OpenDrive.h"
 
+#include "UObject/ConstructorHelpers.h"
+#include "DrawDebugHelpers.h"
+
+#include "ConstructorHelpers.h"
+#include "Materials/MaterialExpressionTextureSample.h"
+
+#include "DrawDebugHelpers.h"
+
 #include <compiler/disable-ue4-macros.h>
 #include <carla/geom/Math.h>
 #include <carla/opendrive/OpenDriveParser.h>
@@ -138,7 +146,7 @@ void AOpenDriveActor::BuildRoutes(FString MapName)
   // xodr file using the lavel name and the game content directory.
   const FString XodrContent = UOpenDrive::LoadXODR(MapName);
 
-  auto map = carla::opendrive::OpenDriveParser::Load(carla::rpc::FromFString(XodrContent));
+  auto map = carla::opendrive::OpenDriveParser::Load(carla::rpc::FromLongFString(XodrContent));
 
   if (!map.has_value())
   {

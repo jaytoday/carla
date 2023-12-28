@@ -6,9 +6,13 @@
 
 #include "Carla.h"
 #include "Carla/Sensor/Sensor.h"
+#include "Carla/Sensor/SensorManager.h"
 
 #include "Carla/Actor/ActorDescription.h"
 #include "Carla/Actor/ActorBlueprintFunctionLibrary.h"
+#include "Carla/Game/CarlaStatics.h"
+
+#include "Engine/CollisionProfile.h"
 
 ASensor::ASensor(const FObjectInitializer &ObjectInitializer)
   : Super(ObjectInitializer)
@@ -17,12 +21,22 @@ ASensor::ASensor(const FObjectInitializer &ObjectInitializer)
   Mesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
   Mesh->bHiddenInGame = true;
   Mesh->CastShadow = false;
-  Mesh->PostPhysicsComponentTick.bCanEverTick = false;
   RootComponent = Mesh;
+}
+
+void ASensor::BeginPlay()
+{
+  Super::BeginPlay();
+  UCarlaEpisode* Episode = UCarlaStatics::GetCurrentEpisode(GetWorld());
+  FSensorManager& SensorManager = Episode->GetSensorManager();
+  SensorManager.RegisterSensor(this);
 }
 
 void ASensor::Set(const FActorDescription &Description)
 {
+  // make a copy
+  SensorDescription = Description;
+
   // set the tick interval of the sensor
   if (Description.Variations.Contains("sensor_tick"))
   {
@@ -30,6 +44,51 @@ void ASensor::Set(const FActorDescription &Description)
         UActorBlueprintFunctionLibrary::ActorAttributeToFloat(Description.Variations["sensor_tick"],
         0.0f));
   }
+}
+
+boost::optional<FActorAttribute> ASensor::GetAttribute(const FString Name)
+{
+  if (SensorDescription.Variations.Contains(Name))
+  {
+    return SensorDescription.Variations[Name];
+  }
+  else
+    return {};
+}
+
+void ASensor::Tick(const float DeltaTime)
+{
+  TRACE_CPUPROFILER_EVENT_SCOPE(ASensor::Tick);
+  Super::Tick(DeltaTime);
+  if (bClientsListening)
+  {
+    if(!Stream.AreClientsListening())
+    {
+      OnLastClientDisconnected();
+      bClientsListening = false;
+    }
+  }
+  else
+  {
+    if(Stream.AreClientsListening())
+    {
+      OnFirstClientConnected();
+      bClientsListening = true;
+    }
+  }
+  if(!bClientsListening)
+  {
+    return;
+  }
+  ReadyToTick = true;
+  PrePhysTick(DeltaTime);
+}
+
+void ASensor::SetSeed(const int32 InSeed)
+{
+  check(RandomEngine != nullptr);
+  Seed = InSeed;
+  RandomEngine->Seed(InSeed);
 }
 
 void ASensor::PostActorCreated()
@@ -54,5 +113,27 @@ void ASensor::PostActorCreated()
 void ASensor::EndPlay(EEndPlayReason::Type EndPlayReason)
 {
   Super::EndPlay(EndPlayReason);
-  Stream = FDataStream();
+
+  // close all sessions associated to the sensor stream
+  auto *GameInstance = UCarlaStatics::GetGameInstance(GetEpisode().GetWorld());
+  auto &StreamingServer = GameInstance->GetServer().GetStreamingServer();
+  auto StreamId = carla::streaming::detail::token_type(Stream.GetToken()).get_stream_id();
+  StreamingServer.CloseStream(StreamId);
+
+  UCarlaEpisode* Episode = UCarlaStatics::GetCurrentEpisode(GetWorld());
+  if(Episode)
+  {
+    FSensorManager& SensorManager = Episode->GetSensorManager();
+    SensorManager.DeRegisterSensor(this);
+  }
+}
+
+void ASensor::PostPhysTickInternal(UWorld *World, ELevelTick TickType, float DeltaSeconds)
+{
+  TRACE_CPUPROFILER_EVENT_SCOPE(ASensor::PostPhysTickInternal);
+  if(ReadyToTick)
+  {
+    PostPhysTick(World, TickType, DeltaSeconds);
+    ReadyToTick = false;
+  }
 }

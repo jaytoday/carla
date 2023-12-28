@@ -9,6 +9,8 @@
 #include "carla/geom/Transform.h"
 #include "carla/geom/Vector3D.h"
 #include "carla/rpc/ActorId.h"
+#include "carla/rpc/ActorState.h"
+#include "carla/rpc/VehicleFailureState.h"
 #include "carla/rpc/TrafficLightState.h"
 #include "carla/rpc/VehicleControl.h"
 #include "carla/rpc/WalkerControl.h"
@@ -62,6 +64,7 @@ namespace detail {
     rpc::TrafficLightState traffic_light_state;
     bool has_traffic_light;
     rpc::ActorId traffic_light_id;
+    rpc::VehicleFailureState failure_state;
   };
 #pragma pack(pop)
 
@@ -90,16 +93,27 @@ namespace detail {
 #pragma pack(pop)
 
 #pragma pack(push, 1)
+
   struct TrafficLightData {
     TrafficLightData() = default;
 
-    rpc::TrafficLightState state;
+    char sign_id[32u];
     float green_time;
     float yellow_time;
     float red_time;
     float elapsed_time;
-    bool time_is_frozen;
     uint32_t pole_index;
+    bool time_is_frozen;
+    rpc::TrafficLightState state;
+  };
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+
+  struct TrafficSignData {
+    TrafficSignData() = default;
+
+    char sign_id[32u];
   };
 #pragma pack(pop)
 } // namespace detail
@@ -111,6 +125,8 @@ namespace detail {
 
     ActorId id;
 
+    rpc::ActorState actor_state;
+
     geom::Transform transform;
 
     geom::Vector3D velocity;
@@ -121,6 +137,7 @@ namespace detail {
 
     union TypeDependentState {
       detail::TrafficLightData traffic_light_data;
+      detail::TrafficSignData traffic_sign_data;
       detail::VehicleData vehicle_data;
       detail::PackedWalkerControl walker_control;
     } state;
@@ -128,8 +145,8 @@ namespace detail {
 
 #pragma pack(pop)
 
-static_assert(
-    sizeof(ActorDynamicState) == 93u,
+ static_assert(
+    sizeof(ActorDynamicState) == 119u,
     "Invalid ActorDynamicState size! "
     "If you modified this class please update the size here, else you may "
     "comment this assert, but your platform may have compatibility issues "

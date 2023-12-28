@@ -11,6 +11,7 @@
 #include "carla/NonCopyable.h"
 #include "carla/client/ActorSnapshot.h"
 #include "carla/client/Timestamp.h"
+#include "carla/geom/Vector3DInt.h"
 #include "carla/sensor/data/RawEpisodeState.h"
 
 #include <boost/optional.hpp>
@@ -24,8 +25,11 @@ namespace detail {
 
   /// Represents the state of all the actors of an episode at a given frame.
   class EpisodeState
-    : std::enable_shared_from_this<EpisodeState>,
+    : public std::enable_shared_from_this<EpisodeState>,
       private NonCopyable {
+
+      using SimulationState = sensor::s11n::EpisodeStateSerializer::SimulationState;
+
   public:
 
     explicit EpisodeState(uint64_t episode_id) : _episode_id(episode_id) {}
@@ -42,6 +46,18 @@ namespace detail {
 
     const auto &GetTimestamp() const {
       return _timestamp;
+    }
+
+    SimulationState GetsimulationState() const {
+      return _simulation_state;
+    }
+
+    bool HasMapChanged() const {
+      return (_simulation_state & SimulationState::MapChange) != SimulationState::None;
+    }
+
+    bool IsLightUpdatePending() const {
+      return (_simulation_state & SimulationState::PendingLightUpdate)  != 0;
     }
 
     bool ContainsActorSnapshot(ActorId actor_id) const {
@@ -91,6 +107,10 @@ namespace detail {
     const uint64_t _episode_id;
 
     const Timestamp _timestamp;
+
+    geom::Vector3DInt _map_origin;
+
+    SimulationState _simulation_state;
 
     std::unordered_map<ActorId, ActorSnapshot> _actors;
   };

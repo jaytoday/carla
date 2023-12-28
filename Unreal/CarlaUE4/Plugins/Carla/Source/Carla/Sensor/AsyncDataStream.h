@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Computer Vision Center (CVC) at the Universitat Autonoma
+// Copyright (c) 2020 Computer Vision Center (CVC) at the Universitat Autonoma
 // de Barcelona (UAB).
 //
 // This work is licensed under the terms of the MIT license.
@@ -8,6 +8,7 @@
 
 #include <compiler/disable-ue4-macros.h>
 #include <carla/Buffer.h>
+#include <carla/Logging.h>
 #include <carla/sensor/SensorRegistry.h>
 #include <carla/sensor/s11n/SensorHeaderSerializer.h>
 #include <carla/streaming/Stream.h>
@@ -57,6 +58,60 @@ public:
   template <typename SensorT, typename... ArgsT>
   void Send(SensorT &Sensor, ArgsT &&... Args);
 
+  template <typename SensorT, typename... ArgsT>
+  void SerializeAndSend(SensorT &Sensor, ArgsT &&... Args);
+
+  /// allow to change the frame number of the header
+  void SetFrameNumber(uint64_t FrameNumber)
+  {
+    carla::sensor::s11n::SensorHeaderSerializer::Header *HeaderStr =
+      reinterpret_cast<carla::sensor::s11n::SensorHeaderSerializer::Header *>(Header.data());
+    if (HeaderStr)
+    {
+      if (HeaderStr->frame != FrameNumber)
+      {
+        carla::log_info("Re-framing sensor type ", HeaderStr->sensor_type, " from ", HeaderStr->frame, " to ", FrameNumber);
+        HeaderStr->frame = FrameNumber;
+      }
+    }
+  }
+
+  /// return the type of sensor of this stream
+  uint64_t GetSensorType()
+  {
+    carla::sensor::s11n::SensorHeaderSerializer::Header *HeaderStr =
+      reinterpret_cast<carla::sensor::s11n::SensorHeaderSerializer::Header *>(Header.data());
+    if (HeaderStr)
+    {
+      return HeaderStr->sensor_type;
+    }
+    return 0u;
+  }
+
+  /// return the transform of the sensor
+  FTransform GetSensorTransform()
+  {
+    carla::sensor::s11n::SensorHeaderSerializer::Header *HeaderStr =
+      reinterpret_cast<carla::sensor::s11n::SensorHeaderSerializer::Header *>(Header.data());
+    if (HeaderStr)
+    {
+      return FTransform(HeaderStr->sensor_transform);
+    }
+    return FTransform();
+  }
+
+  /// return the timestamp of the sensor
+  double GetSensorTimestamp()
+  {
+    carla::sensor::s11n::SensorHeaderSerializer::Header *HeaderStr =
+      reinterpret_cast<carla::sensor::s11n::SensorHeaderSerializer::Header *>(Header.data());
+    if (HeaderStr)
+    {
+      return HeaderStr->timestamp;
+    }
+    return 0.0;
+  }
+
 private:
 
   friend class FDataStreamTmpl<T>;
@@ -79,7 +134,7 @@ private:
 
 using FAsyncDataStream = FAsyncDataStreamTmpl<carla::streaming::Stream>;
 
-using FAsyncDataMultiStream = FAsyncDataStreamTmpl<carla::streaming::MultiStream>;
+using FAsyncDataMultiStream = FAsyncDataStreamTmpl<carla::streaming::Stream>;
 
 // =============================================================================
 // -- FAsyncDataStreamTmpl implementation --------------------------------------
@@ -87,26 +142,26 @@ using FAsyncDataMultiStream = FAsyncDataStreamTmpl<carla::streaming::MultiStream
 
 template <typename T>
 template <typename SensorT, typename... ArgsT>
-inline void FAsyncDataStreamTmpl<T>::Send(SensorT &Sensor, ArgsT &&... Args)
+inline void FAsyncDataStreamTmpl<T>::SerializeAndSend(SensorT &Sensor, ArgsT &&... Args)
 {
-  Stream.Write(
-      std::move(Header),
-      carla::sensor::SensorRegistry::Serialize(Sensor, std::forward<ArgsT>(Args)...));
+  // serialize data
+  carla::Buffer Data(carla::sensor::SensorRegistry::Serialize(Sensor, std::forward<ArgsT>(Args)...));
+
+  // create views of buffers
+  auto ViewHeader = carla::BufferView::CreateFrom(std::move(Header));
+  auto ViewData = carla::BufferView::CreateFrom(std::move(Data));
+
+  // send views
+  Stream.Write(ViewHeader, ViewData);
 }
 
 template <typename T>
-template <typename SensorT>
-inline FAsyncDataStreamTmpl<T>::FAsyncDataStreamTmpl(
-    const SensorT &Sensor,
-    double Timestamp,
-    StreamType InStream)
-  : Stream(std::move(InStream)),
-    Header([&Sensor, Timestamp]() {
-      check(IsInGameThread());
-      using Serializer = carla::sensor::s11n::SensorHeaderSerializer;
-      return Serializer::Serialize(
-          carla::sensor::SensorRegistry::template get<SensorT*>::index,
-          GFrameCounter,
-          Timestamp,
-          Sensor.GetActorTransform());
-    }()) {}
+template <typename SensorT, typename... ArgsT>
+inline void FAsyncDataStreamTmpl<T>::Send(SensorT &Sensor, ArgsT &&... Args)
+{
+  // create views of buffers
+  auto ViewHeader = carla::BufferView::CreateFrom(std::move(Header));
+
+  // send views
+  Stream.Write(ViewHeader, std::forward<ArgsT>(Args)...);
+}
